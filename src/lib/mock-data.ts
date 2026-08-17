@@ -62,8 +62,8 @@ export interface Item {
 
 export const CURRENT_USER: User = {
   id: "user_1",
-  name: "demo@devstash.io",
-  email: "john@example.com",
+  name: "John Doe",
+  email: "demo@devstash.io",
   image: null,
   isPro: true,
 };
