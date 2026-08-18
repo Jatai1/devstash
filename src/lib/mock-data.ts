@@ -134,6 +134,16 @@ export const ITEM_TYPES: ItemType[] = [
   },
 ];
 
+const ITEM_TYPES_BY_ID = new Map(ITEM_TYPES.map((type) => [type.id, type]));
+
+/**
+ * Resolves the type referenced by `Item.typeId` or `Collection.dominantTypeId`.
+ * Returns `undefined` for ids with no matching type.
+ */
+export function getItemType(id: string): ItemType | undefined {
+  return ITEM_TYPES_BY_ID.get(id);
+}
+
 export const COLLECTIONS: Collection[] = [
   {
     id: "col_react_patterns",
