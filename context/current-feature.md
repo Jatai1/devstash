@@ -2,7 +2,7 @@
 
 <!-- Feature Name -->
 
-Dashboard UI Phase 3 (main area) — see `context/features/dashboard-phase-3-spec.md`
+Prisma 7 + Neon PostgreSQL setup — see `context/features/database-spec.md`
 
 ## Status
 
@@ -17,9 +17,6 @@ Completed
 ## Notes
 
 <!-- Any extra notes -->
-
-- The spec references `@src/lib/mock-data.js`; the actual file is
-  `src/lib/mock-data.ts`.
 
 ## History
 
@@ -54,3 +51,23 @@ Completed
 - `/collections/[id]` does not exist yet, so the collection card links 404 until a later phase adds that route
 - Phase 3 complete — `npm run build`, `npm run lint` and `npx tsc --noEmit` pass; committed as `feat: build the dashboard main area for phase 3` on branch `feat/dashboard-phase-3`
 - Merged `feat/dashboard-phase-3` into `main`, deleted the branch, and pushed `main` to `origin`
+- Added `context/features/database-spec.md` and set the current feature to the Prisma 7 + Neon PostgreSQL setup — first backend work after three phases of UI on mock data
+- Started the Prisma 7 + Neon setup on branch `feature/prisma-neon-setup`; installed `prisma@7.9.1`, `@prisma/client@7.9.1`, `@prisma/adapter-pg`, `pg`, `dotenv`, `tsx` and `@types/pg`
+- Prisma 7 breaking changes that shaped the setup: config lives in a root `prisma.config.ts` rather than `package.json`, `.env` is no longer loaded implicitly so the config imports `dotenv/config`, the generator is `prisma-client` (not `prisma-client-js`) with a now-required `output`, the `datasource` block carries no `url`, and a driver adapter is mandatory — bare `new PrismaClient()` connects to nothing
+- `datasource.directUrl` was removed in v7, which matters for Neon: migrations need a session-level connection the PgBouncer `-pooler` host cannot provide, so `prisma.config.ts` reads the unpooled `DIRECT_URL` while the runtime adapter uses the pooled `DATABASE_URL`
+- The client generates to `src/generated/prisma` (gitignored, ESLint-ignored) rather than `node_modules`, with `postinstall: prisma generate` so fresh installs and deploy builds still have it
+- Wrote `prisma/schema.prisma` from the `project-overview.md` §4.2 draft: the four Auth.js models plus `ItemType`, `Item`, `Collection`, `ItemCollection`, `Tag`, `ItemTag` and the `ItemContentKind` enum
+- Added four indexes beyond the draft: FK indexes on `Account.userId`, `Session.userId` and `Collection.defaultTypeId`, plus `@@index([userId, isFavorite])` on `Collection` for the sidebar's favorite-collections query; `Tag` keeps only its `@@unique([userId, name])`, which already serves per-user lookups
+- Added the singleton client at `src/lib/prisma.ts` — `PrismaPg` adapter plus a `globalThis` cache outside production so hot reload does not open a new pool per edit
+- Documented both connection strings in `.env.example` and added a `!.env.example` negation, since the blanket `.env*` rule in `.gitignore` was swallowing it
+- Applied `20260818165522_init` to the Neon development branch — 10 tables, 21 indexes, 10 `ON DELETE CASCADE` rules
+- Added `scripts/test-db.ts` (`npm run test:db`): connects through the same pooled URL and adapter the app uses, reports row counts, then exercises a full create/relate/cascade round trip inside a transaction that always rolls back, so it leaves no rows and is safe to re-run
+- Neither `scripts/test-db.ts` nor `prisma/seed.ts` can use top-level `await`: the project is not `"type": "module"`, so `tsx` treats a `.ts` file as CJS where top-level await is a hard error — both wrap their logic in `main()`
+- Seeded the seven immutable system item types via `prisma/seed.ts` and a `migrations.seed` entry in `prisma.config.ts`; v7 no longer seeds automatically after `migrate dev`, so it runs as `npx prisma db seed`
+- The seed cannot use `upsert`: system types have `userId: null`, and Postgres treats NULLs as distinct in a unique index, so `@@unique([userId, name])` never matches an existing row and every run would insert duplicates. It does `findFirst` then create-or-update instead, and system-type uniqueness is therefore only guaranteed in application code
+- Deliberately did not add partial unique indexes (`... WHERE "userId" IS NULL`) to enforce that at the database level: `schema.prisma` cannot express an indexed `WHERE`, so Prisma would read them as drift and emit `DROP INDEX` on the next `migrate dev`
+- `ItemType` needed three fields the §4.2 draft lacked, all of which the dashboard already consumes from `mock-data.ts`: `slug` (the `/items/[slug]` route segment), `contentKind` (which `ItemContentKind` the type produces) and `label` (the plural display name, kept separate from `name` so the UI's display text is not part of the row's identity)
+- Added them in `20260818171507_add_item_type_slug_and_content_kind` and `20260818173042_add_item_type_label`, both hand-written on top of `prisma migrate diff` output: Prisma refuses to add a required column to a populated table, so each migration adds the column nullable, backfills it, then `SET NOT NULL` so a missed row fails loudly. Hand-writing a migration file is not the same as editing the database, which is still never done directly
+- Verified the database and schema agree with `prisma migrate diff --from-config-datasource --to-schema`, which returns an empty migration
+- Feature complete — `prisma migrate status` reports 3 migrations and the schema up to date, and `npx tsc --noEmit`, `npm run lint`, `npm run build` and `npm run test:db` all pass
+- Nothing consumes the database yet: all nine dashboard components still import from `src/lib/mock-data.ts`, and the only importers of Prisma are `src/lib/prisma.ts` and the two scripts. Swapping the UI over is the next feature, and it still has to reconcile `Collection.dominantTypeId` vs. the schema's `defaultTypeId` and the mock's stored `itemCount` fields, which the schema derives from `ItemCollection`
