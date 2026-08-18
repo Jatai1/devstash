@@ -10,7 +10,7 @@ Spec: @context/features/dashboard-phase-1-spec.md
 
 <!-- Not Started|In Progress|Completed -->
 
-In Progress — built on branch `feat/dashboard-phase-1`, not merged yet
+Completed
 
 ## Goals
 
@@ -54,3 +54,4 @@ and main area are placeholders that phases 2 and 3 fill in.
 - Initialized shadcn/ui (`radix` base, `nova` preset, neutral base color, Lucide icons) — wrote `components.json`, `src/lib/utils.ts` and the theme tokens in `globals.css`; added the `button`, `input` and `separator` components
 - Wired `--font-sans`/`--font-mono` to the existing Geist `next/font` variables, and hard-coded `dark` on `<html>` so dark mode is the default
 - Added the `/dashboard` route: `DashboardTopBar` (search + New Collection/New Item, display only) plus `Sidebar`/`Main` placeholders
+- Phase 1 complete — `npm run build` and `npm run lint` pass, and `/dashboard` was verified in the browser; committed as `feat: add dashboard shell for phase 1` on branch `feat/dashboard-phase-1`
