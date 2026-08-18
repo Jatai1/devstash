@@ -9,10 +9,10 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { getItemType, type Collection } from "@/lib/mock-data";
+import type { CollectionSummary } from "@/lib/db/collections";
 
 interface CollectionCardProps {
-  collection: Collection;
+  collection: CollectionSummary;
 }
 
 /**
@@ -20,12 +20,12 @@ interface CollectionCardProps {
  * dominant type, and the footer row shows an icon per type it holds.
  */
 export function CollectionCard({ collection }: CollectionCardProps) {
-  const dominantType = getItemType(collection.dominantTypeId);
+  const { itemCount } = collection;
 
   return (
     <Card
       className="border-l-4 transition-colors hover:bg-muted/40"
-      style={{ borderLeftColor: dominantType?.color }}
+      style={{ borderLeftColor: collection.dominantType?.color }}
     >
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
@@ -42,30 +42,28 @@ export function CollectionCard({ collection }: CollectionCardProps) {
             />
           )}
         </CardTitle>
-        <CardDescription>{collection.itemCount} items</CardDescription>
+        <CardDescription>
+          {itemCount} {itemCount === 1 ? "item" : "items"}
+        </CardDescription>
       </CardHeader>
 
       <CardContent className="space-y-4">
-        <p className="text-sm text-muted-foreground">{collection.description}</p>
+        {collection.description && (
+          <p className="text-sm text-muted-foreground">
+            {collection.description}
+          </p>
+        )}
 
         <div className="flex items-center gap-2">
-          {collection.typeIds.map((typeId) => {
-            const type = getItemType(typeId);
-
-            if (!type) {
-              return null;
-            }
-
-            return (
-              <TypeIcon
-                key={typeId}
-                name={type.icon}
-                className="size-4"
-                style={{ color: type.color }}
-                aria-label={type.name}
-              />
-            );
-          })}
+          {collection.types.map((type) => (
+            <TypeIcon
+              key={type.id}
+              name={type.icon}
+              className="size-4"
+              style={{ color: type.color }}
+              aria-label={type.label}
+            />
+          ))}
         </div>
       </CardContent>
     </Card>

@@ -9,6 +9,10 @@ export const metadata: Metadata = {
   title: "Dashboard | Devstash",
 };
 
+// The page reads the database on every request, so it must not be prerendered
+// at build time — that would bake one snapshot of the data into static HTML.
+export const dynamic = "force-dynamic";
+
 /** Dashboard main area: counters, recent collections, pinned and recent items. */
 export default function DashboardPage() {
   return (
