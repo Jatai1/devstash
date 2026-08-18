@@ -1,0 +1,218 @@
+// Prisma 7: the `prisma-client` generator with an explicit `output` replaces the
+// old `prisma-client-js` generator, and the datasource carries no `url` — the
+// connection string comes from `prisma.config.ts`.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ---------------------------------------------------------------------------
+// Auth.js (NextAuth v5) required models
+// ---------------------------------------------------------------------------
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String?   @unique
+  emailVerified DateTime?
+  image         String?
+  password      String? // hashed, only set for credentials sign-up
+
+  // Billing / plan
+  isPro                Boolean   @default(false)
+  stripeCustomerId     String?   @unique
+  stripeSubscriptionId String?   @unique
+  proSince             DateTime?
+
+  accounts Account[]
+  sessions Session[]
+
+  items       Item[]
+  itemTypes   ItemType[]
+  collections Collection[]
+  tags        Tag[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// ---------------------------------------------------------------------------
+// Core domain models
+// ---------------------------------------------------------------------------
+
+enum ItemContentKind {
+  TEXT
+  URL
+  FILE
+}
+
+model ItemType {
+  id       String  @id @default(cuid())
+  name     String // stable identifier: "snippet" | "prompt" | "note" | "command" | "link" | "file" | "image" | custom
+  label    String // display name shown in the UI, e.g. "Snippets"
+  slug     String // url segment for /items/[slug], e.g. "snippets"
+  icon     String // lucide icon name, e.g. "Code"
+  color    String // hex, e.g. "#3b82f6"
+  isSystem Boolean @default(false) // system types are seeded & immutable
+
+  // which of `Item.contentType` this type produces
+  contentKind ItemContentKind
+
+  // null for system types, set for user-defined custom types
+  userId String?
+  user   User?   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  items                 Item[]
+  defaultForCollections Collection[]
+
+  createdAt DateTime @default(now())
+
+  // NOTE: these only constrain *custom* types. Postgres treats NULLs as distinct
+  // in a unique index, so system types (userId = null) slip past both — enforcing
+  // that would need a partial index, which Prisma's schema language cannot
+  // express. `prisma/seed.ts` guards system-type uniqueness in application code.
+  @@unique([userId, name])
+  @@unique([userId, slug])
+  @@index([userId])
+}
+
+model Item {
+  id String @id @default(cuid())
+
+  title       String
+  description String?
+
+  contentType ItemContentKind
+  content     String? @db.Text // text content (snippet/prompt/note/command)
+  language    String? // optional, for syntax highlighting on code-like types
+
+  url String? // for `link` type
+
+  fileUrl  String? // Cloudflare R2 object URL, for file/image types
+  fileName String? // original filename
+  fileSize Int? // bytes
+
+  isFavorite Boolean @default(false)
+  isPinned   Boolean @default(false)
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  itemTypeId String
+  itemType   ItemType @relation(fields: [itemTypeId], references: [id])
+
+  collections ItemCollection[]
+  tags        ItemTag[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@index([itemTypeId])
+  @@index([userId, isPinned])
+  @@index([userId, isFavorite])
+}
+
+model Collection {
+  id          String  @id @default(cuid())
+  name        String
+  description String?
+  isFavorite  Boolean @default(false)
+
+  // suggested type for new items added to an empty collection
+  defaultTypeId String?
+  defaultType   ItemType? @relation(fields: [defaultTypeId], references: [id])
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  items ItemCollection[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@index([defaultTypeId])
+  @@index([userId, isFavorite])
+}
+
+// Item <-> Collection (many-to-many)
+model ItemCollection {
+  itemId       String
+  collectionId String
+  addedAt      DateTime @default(now())
+
+  item       Item       @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  collection Collection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+
+  @@id([itemId, collectionId])
+  @@index([collectionId])
+}
+
+model Tag {
+  id     String @id @default(cuid())
+  name   String
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  items ItemTag[]
+
+  // the composite unique already serves `where: { userId }` lookups
+  @@unique([userId, name])
+}
+
+// Item <-> Tag (many-to-many)
+model ItemTag {
+  itemId String
+  tagId  String
+
+  item Item @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  tag  Tag  @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([itemId, tagId])
+  @@index([tagId])
+}
