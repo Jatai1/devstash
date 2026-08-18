@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ChevronDown, Folder, Star } from "lucide-react";
+import { ChevronDown, Folder, LayoutGrid, Star } from "lucide-react";
 
 import {
   Collapsible,
@@ -18,22 +18,21 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from "@/components/ui/sidebar";
-import { COLLECTIONS, type Collection } from "@/lib/mock-data";
+import type { CollectionSummary, SidebarCollections } from "@/lib/db/collections";
 
-/** How many non-favorite collections the "Recent" list shows. */
-const RECENT_LIMIT = 5;
+interface SidebarCollectionNavProps {
+  /** Loaded by `DashboardSidebar`; this component needs `usePathname`. */
+  collections: SidebarCollections;
+}
 
 /**
  * Collapsible "Collections" group, split into the user's favorites and the
- * most recently updated of everything else.
+ * most recently updated of everything else, with a link to the full list.
  */
-export function SidebarCollectionNav() {
+export function SidebarCollectionNav({
+  collections,
+}: SidebarCollectionNavProps) {
   const pathname = usePathname();
-
-  const favorites = COLLECTIONS.filter((collection) => collection.isFavorite);
-  const recent = COLLECTIONS.filter((collection) => !collection.isFavorite)
-    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
-    .slice(0, RECENT_LIMIT);
 
   return (
     <Collapsible defaultOpen className="group/collections">
@@ -49,15 +48,31 @@ export function SidebarCollectionNav() {
           <SidebarGroupContent className="space-y-2">
             <CollectionList
               heading="Favorites"
-              collections={favorites}
+              collections={collections.favorites}
               pathname={pathname}
               showStar
             />
             <CollectionList
               heading="Recent"
-              collections={recent}
+              collections={collections.recent}
               pathname={pathname}
             />
+
+            <SidebarMenu>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  asChild
+                  isActive={pathname === "/collections"}
+                  tooltip="View all collections"
+                  className="text-sidebar-foreground/70"
+                >
+                  <Link href="/collections">
+                    <LayoutGrid />
+                    <span>View all collections</span>
+                  </Link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            </SidebarMenu>
           </SidebarGroupContent>
         </CollapsibleContent>
       </SidebarGroup>
@@ -67,9 +82,9 @@ export function SidebarCollectionNav() {
 
 interface CollectionListProps {
   heading: string;
-  collections: Collection[];
+  collections: CollectionSummary[];
   pathname: string;
-  /** Favorites show a star instead of the item count. */
+  /** Favorites show a star; everything else shows a dominant-type dot. */
   showStar?: boolean;
 }
 
@@ -111,7 +126,7 @@ function CollectionList({
                     aria-label="Favorite"
                   />
                 ) : (
-                  collection.itemCount
+                  <DominantTypeDot type={collection.dominantType} />
                 )}
               </SidebarMenuBadge>
             </SidebarMenuItem>
@@ -119,5 +134,29 @@ function CollectionList({
         })}
       </SidebarMenu>
     </div>
+  );
+}
+
+/**
+ * The color of the type most of a collection's items use. Renders nothing for
+ * an empty collection with no default type, since there is no color to show.
+ */
+function DominantTypeDot({
+  type,
+}: {
+  type: CollectionSummary["dominantType"];
+}) {
+  if (!type) {
+    return null;
+  }
+
+  return (
+    <span
+      className="size-2.5 rounded-full"
+      style={{ backgroundColor: type.color }}
+      title={type.label}
+      aria-label={type.label}
+      role="img"
+    />
   );
 }
