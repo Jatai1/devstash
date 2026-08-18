@@ -1,13 +1,13 @@
 import { Pin } from "lucide-react";
 
 import { ItemCard } from "@/components/dashboard/ItemCard";
-import { ITEMS } from "@/lib/mock-data";
+import { getPinnedItems } from "@/lib/db/items";
+import { getCurrentUserId } from "@/lib/db/user";
 
 /** Items the user pinned to the top of the dashboard, newest first. */
-export function PinnedItems() {
-  const pinned = ITEMS.filter((item) => item.isPinned).sort((a, b) =>
-    b.updatedAt.localeCompare(a.updatedAt),
-  );
+export async function PinnedItems() {
+  const userId = await getCurrentUserId();
+  const pinned = await getPinnedItems(userId);
 
   if (pinned.length === 0) {
     return null;

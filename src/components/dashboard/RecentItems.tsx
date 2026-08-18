@@ -1,19 +1,16 @@
 import { Clock } from "lucide-react";
 
 import { ItemCard } from "@/components/dashboard/ItemCard";
-import { ITEMS } from "@/lib/mock-data";
-
-/** How many recent items the dashboard lists. */
-const RECENT_LIMIT = 10;
+import { getRecentItems } from "@/lib/db/items";
+import { getCurrentUserId } from "@/lib/db/user";
 
 /**
  * The most recently updated items. Pinned items are left out because they
  * already have their own section directly above this one.
  */
-export function RecentItems() {
-  const recent = ITEMS.filter((item) => !item.isPinned)
-    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
-    .slice(0, RECENT_LIMIT);
+export async function RecentItems() {
+  const userId = await getCurrentUserId();
+  const recent = await getRecentItems(userId);
 
   if (recent.length === 0) {
     return null;

@@ -1,18 +1,8 @@
+import { ITEM_TYPE_SELECT, type ItemTypeSummary } from "@/lib/db/item-types";
 import { prisma } from "@/lib/prisma";
 
 /** How many collections the dashboard grid shows. */
 export const RECENT_COLLECTIONS_LIMIT = 6;
-
-/** The parts of an `ItemType` a collection card renders. */
-export interface CollectionType {
-  id: string;
-  /** Plural display name, e.g. "Snippets". */
-  label: string;
-  /** Lucide icon name, e.g. "Code". */
-  icon: string;
-  /** Hex color used for the card border and the type icons. */
-  color: string;
-}
 
 export interface CollectionSummary {
   id: string;
@@ -26,18 +16,11 @@ export interface CollectionSummary {
    * color. Falls back to `Collection.defaultType` for an empty collection, and
    * is null only when that is unset too.
    */
-  dominantType: CollectionType | null;
+  dominantType: ItemTypeSummary | null;
   /** Every type the collection holds, most-used first. */
-  types: CollectionType[];
+  types: ItemTypeSummary[];
   updatedAt: Date;
 }
-
-const TYPE_SELECT = {
-  id: true,
-  label: true,
-  icon: true,
-  color: true,
-} as const;
 
 /**
  * The collections a user most recently touched, newest first.
@@ -60,9 +43,9 @@ export async function getRecentCollections(
       description: true,
       isFavorite: true,
       updatedAt: true,
-      defaultType: { select: TYPE_SELECT },
+      defaultType: { select: ITEM_TYPE_SELECT },
       items: {
-        select: { item: { select: { itemType: { select: TYPE_SELECT } } } },
+        select: { item: { select: { itemType: { select: ITEM_TYPE_SELECT } } } },
       },
     },
   });
@@ -106,8 +89,8 @@ export async function getCollectionStats(
  * Deduplicates one type per distinct id and orders them by how many items use
  * them, breaking ties on label so the icon row is stable between renders.
  */
-function rankTypesByUse(types: CollectionType[]): CollectionType[] {
-  const counts = new Map<string, { type: CollectionType; count: number }>();
+function rankTypesByUse(types: ItemTypeSummary[]): ItemTypeSummary[] {
+  const counts = new Map<string, { type: ItemTypeSummary; count: number }>();
 
   for (const type of types) {
     const seen = counts.get(type.id);
