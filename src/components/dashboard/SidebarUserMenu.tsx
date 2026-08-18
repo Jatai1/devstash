@@ -7,41 +7,47 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from "@/components/ui/sidebar";
-import { CURRENT_USER } from "@/lib/mock-data";
+import { getCurrentUser } from "@/lib/db/user";
 
-/** Initials shown while there is no avatar image. */
+/**
+ * Initials shown while there is no avatar image. Falls back to the first
+ * character of whatever the row has, since `User.name` is nullable.
+ */
 function getInitials(name: string): string {
-  return name
+  const initials = name
     .split(" ")
+    .filter(Boolean)
     .map((part) => part[0])
     .slice(0, 2)
-    .join("")
-    .toUpperCase();
+    .join("");
+
+  return (initials || name.slice(0, 1)).toUpperCase();
 }
 
 /**
- * Footer of the sidebar: the signed-in user plus a settings shortcut. Display
- * only — neither the row nor the gear is wired up yet.
+ * Footer of the sidebar: the signed-in user plus a settings shortcut. The gear
+ * is display only — it is not wired up yet.
  */
-export function SidebarUserMenu() {
+export async function SidebarUserMenu() {
+  const user = await getCurrentUser();
+  // Unnamed accounts still need something to show, and the email is the only
+  // other identifier this row has.
+  const displayName = user.name ?? user.email;
+
   return (
     <SidebarMenu>
       <SidebarMenuItem>
-        <SidebarMenuButton size="lg" tooltip={CURRENT_USER.name}>
+        <SidebarMenuButton size="lg" tooltip={displayName}>
           <Avatar className="size-8 rounded-full">
-            {CURRENT_USER.image ? (
-              <AvatarImage src={CURRENT_USER.image} alt="" />
-            ) : null}
+            {user.image ? <AvatarImage src={user.image} alt="" /> : null}
             <AvatarFallback className="rounded-full text-xs">
-              {getInitials(CURRENT_USER.name)}
+              {getInitials(displayName)}
             </AvatarFallback>
           </Avatar>
           <div className="grid flex-1 text-left leading-tight">
-            <span className="truncate text-sm font-medium">
-              {CURRENT_USER.name}
-            </span>
+            <span className="truncate text-sm font-medium">{displayName}</span>
             <span className="truncate text-xs text-sidebar-foreground/60">
-              {CURRENT_USER.email}
+              {user.email}
             </span>
           </div>
         </SidebarMenuButton>

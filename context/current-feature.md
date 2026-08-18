@@ -2,21 +2,32 @@
 
 <!-- Feature Name -->
 
-Dashboard items from the database — see `context/features/dashboard-items-spec.md`
+Stats & sidebar from the database — see `context/features/stats-sidebar-spec.md`
 
 ## Status
 
 <!-- Not Started|In Progress|Completed -->
 
-Completed
+In Progress
 
 ## Goals
 
 <!-- Goals & requirements -->
 
+- Read the main area's stats from the database instead of `src/lib/mock-data.ts`, keeping the current design and layout
+- Show the system item types in the sidebar with their icons, each linking to `/items/[typename]`
+- Show the real collections in the sidebar, with a "View all collections" link under the list pointing at `/collections`
+- Keep the star icon on favorite collections; give each recent collection a colored circle based on its most-used item type
+- Put the item queries in `src/lib/db/items.ts`, following `src/lib/db/collections.ts` as the pattern
+
 ## Notes
 
 <!-- Any extra notes -->
+
+- `DashboardStats` and `src/lib/db/items.ts` already came out of the previous feature — the stats cards read all four counters from the database today, so that half of the spec may already be satisfied and mainly needs verifying rather than rewriting
+- The remaining mock consumers are the three sidebar components: `SidebarTypeNav`, `SidebarCollectionNav` and `SidebarUserMenu`
+- `/items/[slug]` and `/collections` do not exist yet, so the sidebar links will 404 until later features add those routes
+- The seeded user is "Demo User" (`isPro: false`), not the mock's "John Doe" — `SidebarUserMenu` will change what it displays once it reads real data
 
 ## History
 
@@ -106,3 +117,17 @@ Completed
 - Verified against the live database and the rendered page: stats show 18 items / 5 collections / 6 favorite items / 3 favorite collections, the pinned section lists the 4 seeded pinned items newest-first, and the recent list holds 10 non-pinned items with their type colors, tags and dates
 - Feature complete — `npx tsc --noEmit`, `npm run lint` and `npm run build` pass
 - `mock-data.ts` is now only read by the three sidebar components (`SidebarTypeNav`, `SidebarCollectionNav`, `SidebarUserMenu`); the main dashboard area is entirely database-backed
+- Added `context/features/stats-sidebar-spec.md` and set the current feature to the stats and sidebar work — verify the stats cards against the database and move the sidebar's type and collection navs off `mock-data.ts`
+- Started on branch `feature/stats-sidebar`; the stats half of the spec was already satisfied by the previous feature, so the work was the sidebar plus the queries behind it
+- Both sidebar navs call `usePathname` to highlight the active route, so they cannot query the database themselves — `DashboardSidebar` became an async server component that loads the types and collections and passes them down as props. `SidebarUserMenu` had no client hooks, so it awaits `getCurrentUser()` directly
+- Added `getItemTypes()` to `src/lib/db/item-types.ts` rather than `items.ts` as the spec suggested: that file already existed to hold the item-type shape, and `items.ts` is about items. It returns the system types plus the user's custom ones, with a per-user filtered relation count so a shared system type reports only that user's items
+- `ItemType` has no sort column, so the nav orders by `isSystem` desc, then `createdAt`, then `label` — system types lead, and the order is stable between renders
+- The nav lists every type including ones the user has never used (Notes, Files and Images all show 0), and it renders `ItemType.label` — the plural display name — where the mock had `name`
+- Split the collection query the way `items.ts` splits its item query: a private `findCollections(where, take?)` now backs both `getRecentCollections` and the new `getSidebarCollections`, which returns favorites and recents in one call. The `isFavorite: false` filter on the recents query is what keeps a starred collection from appearing twice
+- Recent collections show a circle in the type's color instead of an item count, computed from the collection's items like the card's border is; favorites keep the amber star. The dot renders nothing for an empty collection with no default type, since there would be no color to show
+- Added a "View all collections" row under both lists linking to `/collections`, which does not exist yet and 404s like the other sidebar links
+- Added `getCurrentUser()` alongside `getCurrentUserId()` in `src/lib/db/user.ts`, both cached per request; `getCurrentUserId` now derives from it. `User.name` is nullable so the footer falls back to the email, and `User.email` is nullable in the Auth.js schema but is the column the lookup matched on
+- Deleted `src/lib/mock-data.ts` — nothing imported it any more, and its "John Doe" user contradicted the seeded "Demo User"
+- Verified against the live database and the rendered page: all 7 types link to the right `/items/[slug]` with counts 4/3/5/0/6/0/0 summing to the 18 seeded items, the 3 favorite collections show stars, Terminal Commands and DevOps show orange (Commands) and green (Links) dots, the footer reads "Demo User / demo@devstash.io", and the stats cards show 18 / 5 / 6 / 3
+- Feature complete — `npx tsc --noEmit`, `npm run lint` and `npm run build` pass, and `/dashboard` is still reported as `ƒ (Dynamic)`
+- No component reads mock data any more; the whole dashboard is database-backed. The open follow-ups are the routes the sidebar links to: `/items/[slug]` and `/collections`, plus `/collections/[id]`

@@ -4,6 +4,9 @@ import { prisma } from "@/lib/prisma";
 /** How many collections the dashboard grid shows. */
 export const RECENT_COLLECTIONS_LIMIT = 6;
 
+/** How many non-favorite collections the sidebar's "Recent" list shows. */
+export const SIDEBAR_RECENT_COLLECTIONS_LIMIT = 5;
+
 export interface CollectionSummary {
   id: string;
   name: string;
@@ -29,14 +32,65 @@ export interface CollectionSummary {
  * column: `Collection.defaultTypeId` is only a suggestion for new items, so it
  * can disagree with what the collection actually holds.
  */
-export async function getRecentCollections(
+export function getRecentCollections(
   userId: string,
   limit: number = RECENT_COLLECTIONS_LIMIT,
 ): Promise<CollectionSummary[]> {
+  return findCollections({ userId }, limit);
+}
+
+/** The two lists the sidebar's "Collections" group renders. */
+export interface SidebarCollections {
+  /** Every collection the user starred, newest first. */
+  favorites: CollectionSummary[];
+  /** The most recently updated of everything else. */
+  recent: CollectionSummary[];
+}
+
+/**
+ * Collections for the sidebar, split into favorites and recents.
+ *
+ * The `isFavorite: false` filter on the second query is what keeps a starred
+ * collection from appearing twice in the sidebar.
+ */
+export async function getSidebarCollections(
+  userId: string,
+  recentLimit: number = SIDEBAR_RECENT_COLLECTIONS_LIMIT,
+): Promise<SidebarCollections> {
+  const [favorites, recent] = await Promise.all([
+    findCollections({ userId, isFavorite: true }),
+    findCollections({ userId, isFavorite: false }, recentLimit),
+  ]);
+
+  return { favorites, recent };
+}
+
+export interface CollectionStats {
+  total: number;
+  favorites: number;
+}
+
+/** Counters for the dashboard's collection stats cards. */
+export async function getCollectionStats(
+  userId: string,
+): Promise<CollectionStats> {
+  const [total, favorites] = await Promise.all([
+    prisma.collection.count({ where: { userId } }),
+    prisma.collection.count({ where: { userId, isFavorite: true } }),
+  ]);
+
+  return { total, favorites };
+}
+
+/** Every collection list differs only in its filter, so they share one query. */
+async function findCollections(
+  where: { userId: string; isFavorite?: boolean },
+  take?: number,
+): Promise<CollectionSummary[]> {
   const collections = await prisma.collection.findMany({
-    where: { userId },
+    where,
     orderBy: { updatedAt: "desc" },
-    take: limit,
+    take,
     select: {
       id: true,
       name: true,
@@ -66,23 +120,6 @@ export async function getRecentCollections(
       updatedAt: collection.updatedAt,
     };
   });
-}
-
-export interface CollectionStats {
-  total: number;
-  favorites: number;
-}
-
-/** Counters for the dashboard's collection stats cards. */
-export async function getCollectionStats(
-  userId: string,
-): Promise<CollectionStats> {
-  const [total, favorites] = await Promise.all([
-    prisma.collection.count({ where: { userId } }),
-    prisma.collection.count({ where: { userId, isFavorite: true } }),
-  ]);
-
-  return { total, favorites };
 }
 
 /**
