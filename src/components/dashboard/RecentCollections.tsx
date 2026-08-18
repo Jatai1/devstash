@@ -2,16 +2,13 @@ import Link from "next/link";
 
 import { CollectionCard } from "@/components/dashboard/CollectionCard";
 import { Button } from "@/components/ui/button";
-import { COLLECTIONS } from "@/lib/mock-data";
-
-/** How many collections the dashboard grid shows before "View all". */
-const RECENT_LIMIT = 6;
+import { getRecentCollections } from "@/lib/db/collections";
+import { getCurrentUserId } from "@/lib/db/user";
 
 /** Grid of the most recently updated collections. */
-export function RecentCollections() {
-  const collections = [...COLLECTIONS]
-    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
-    .slice(0, RECENT_LIMIT);
+export async function RecentCollections() {
+  const userId = await getCurrentUserId();
+  const collections = await getRecentCollections(userId);
 
   return (
     <section className="space-y-4">
@@ -22,11 +19,17 @@ export function RecentCollections() {
         </Button>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-        {collections.map((collection) => (
-          <CollectionCard key={collection.id} collection={collection} />
-        ))}
-      </div>
+      {collections.length === 0 ? (
+        <p className="text-sm text-muted-foreground">
+          No collections yet. Create one to start grouping your items.
+        </p>
+      ) : (
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {collections.map((collection) => (
+            <CollectionCard key={collection.id} collection={collection} />
+          ))}
+        </div>
+      )}
     </section>
   );
 }

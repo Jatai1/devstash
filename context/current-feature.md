@@ -2,21 +2,44 @@
 
 <!-- Feature Name -->
 
-Seed demo data — see `context/features/seed-spec.md`
+Dashboard collections from the database — see `context/features/dashboard-collections-spec.md`
 
 ## Status
 
 <!-- Not Started|In Progress|Completed -->
 
-Completed
+In Progress
 
 ## Goals
 
 <!-- Goals & requirements -->
 
+Replace the dummy collection data in the dashboard main area with real data from the
+Neon database via Prisma. The recent-collections grid keeps its current design — six
+cards, same layout as `context/screenshots/dashboard-ui-main.png` — only the source of
+the data changes.
+
+- Add `src/lib/db/collections.ts` holding the data-fetching functions
+- Fetch collections directly in the server component (no API route, no client fetching)
+- Derive each card's border colour from the most-used content type in that collection
+- Show small icons for every type present in a collection
+- Update the collection stats display to match the real data
+- Keep `src/lib/mock-data.ts` in place for now — only the collections come off it
+
 ## Notes
 
 <!-- Any extra notes -->
+
+- Out of scope: the items listed underneath the collections. That comes in a later
+  feature.
+- The schema calls it `Collection.defaultTypeId`, while `mock-data.ts` calls it
+  `dominantTypeId`; the "most-used type" the cards need is derived from the
+  collection's items via `ItemCollection`, not read off a stored column.
+- `mock-data.ts` stores an `itemCount` per collection; the schema derives that from
+  `ItemCollection`, so the card counts have to come from a relation count.
+- The seeded demo user is "Demo User" / `demo@devstash.io`, which disagrees with the
+  mock data's "John Doe"; irrelevant here, but it will show up when the sidebar moves
+  over.
 
 ## History
 
@@ -82,3 +105,15 @@ Completed
 - Feature complete — `npx prisma db seed`, `npm run test:db`, `npx tsc --noEmit`, `npm run lint` and `npm run build` all pass; the database now holds 1 user, 7 item types, 5 collections, 18 items, 18 tags and 40 item-tag links
 - The seeded user still disagrees with `mock-data.ts`, which has "John Doe" and `isPro: true` for the same email, so `SidebarUserMenu` will show a different name once the dashboard reads real data
 - The Neon production branch still has no tables and has never been seeded
+- Added `context/features/dashboard-collections-spec.md` and set the current feature to wiring the dashboard's recent-collections grid to the database — the first UI that reads real data instead of `src/lib/mock-data.ts`
+- Started on branch `feature/dashboard-collections`; added `src/lib/db/` as the home for query functions, with `collections.ts` (`getRecentCollections`, `getCollectionStats`) and `user.ts`
+- There is no auth yet, so `src/lib/db/user.ts` exposes `getCurrentUserId()`, which looks up the seeded `demo@devstash.io` account and is wrapped in React's `cache()` so the several server components on one page share a single query per request. When Auth.js lands it reads the session instead and no caller changes
+- The card's dominant type is computed from the collection's items rather than read off `Collection.defaultTypeId` — that column is only a suggestion for new items and can disagree with what the collection holds. `defaultType` is the fallback for an empty collection
+- `getRecentCollections` selects the item types through `ItemCollection` in one query and ranks them in JS (count desc, then label, so the icon row is stable); `itemCount` is the length of that relation, so the count and the icons can never disagree
+- `CollectionCard` now takes a `CollectionSummary` instead of the mock `Collection`: `description` is nullable in the schema so it only renders when set, and the count is pluralized ("1 item")
+- `RecentCollections` gained an empty state, which real data makes reachable and the mock array never did
+- `DashboardStats` is now async and reads the two collection counters from the database; the two item counters still come off `ITEMS`, since items are a later feature
+- Added `export const dynamic = "force-dynamic"` to the dashboard page so the build does not prerender one snapshot of the database into static HTML — `next build` now reports `/dashboard` as `ƒ (Dynamic)`
+- The sidebar's collection nav still reads `mock-data.ts`, as do the pinned and recent item sections, so the page mixes real and mock data until those features land
+- Verified against the live database and the rendered page: stats show 5 collections / 3 favorites, and the grid renders the 5 seeded collections newest-first with the right counts, descriptions and border colors — DevOps (2 links, 1 command, 1 snippet) correctly resolves to Links and shows three icons
+- Feature complete — `npx tsc --noEmit`, `npm run lint` and `npm run build` all pass
