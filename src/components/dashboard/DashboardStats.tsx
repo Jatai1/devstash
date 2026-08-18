@@ -2,8 +2,8 @@ import { Folder, FolderHeart, Layers, Star, type LucideIcon } from "lucide-react
 
 import { Card, CardContent } from "@/components/ui/card";
 import { getCollectionStats } from "@/lib/db/collections";
+import { getItemStats } from "@/lib/db/items";
 import { getCurrentUserId } from "@/lib/db/user";
-import { ITEMS } from "@/lib/mock-data";
 import { cn } from "@/lib/utils";
 
 interface Stat {
@@ -14,22 +14,18 @@ interface Stat {
   iconClassName: string;
 }
 
-/**
- * The four counters above the dashboard content.
- *
- * The collection counters are counted in the database. The item counters still
- * come off the mock array — moving items over is a later feature — and are
- * derived from `ITEMS` rather than the per-type `itemCount` fields, so they
- * match what the page actually lists.
- */
+/** The four counters above the dashboard content, all counted in the database. */
 export async function DashboardStats() {
   const userId = await getCurrentUserId();
-  const collections = await getCollectionStats(userId);
+  const [items, collections] = await Promise.all([
+    getItemStats(userId),
+    getCollectionStats(userId),
+  ]);
 
   const stats: Stat[] = [
     {
       label: "Items",
-      value: ITEMS.length,
+      value: items.total,
       icon: Layers,
       iconClassName: "text-muted-foreground",
     },
@@ -41,7 +37,7 @@ export async function DashboardStats() {
     },
     {
       label: "Favorite Items",
-      value: ITEMS.filter((item) => item.isFavorite).length,
+      value: items.favorites,
       icon: Star,
       iconClassName: "text-amber-400",
     },
