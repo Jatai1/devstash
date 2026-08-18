@@ -1,13 +1,55 @@
+import Link from "next/link";
+import { Layers } from "lucide-react";
+
+import { SidebarCollectionNav } from "@/components/dashboard/SidebarCollectionNav";
+import { SidebarTypeNav } from "@/components/dashboard/SidebarTypeNav";
+import { SidebarUserMenu } from "@/components/dashboard/SidebarUserMenu";
+import {
+  Sidebar,
+  SidebarContent,
+  SidebarFooter,
+  SidebarHeader,
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  SidebarRail,
+  SidebarSeparator,
+} from "@/components/ui/sidebar";
+
 /**
- * Sidebar placeholder for the dashboard shell.
- *
- * Phase 2 replaces the heading with the item type links, collections and the
- * current user footer.
+ * Dashboard sidebar: the brand, the item types, the user's collections and the
+ * current user. Collapses off-canvas on desktop and renders as a drawer on
+ * mobile — both driven by the `SidebarTrigger` in the top bar.
  */
 export function DashboardSidebar() {
   return (
-    <aside className="hidden w-64 shrink-0 border-r border-border bg-sidebar p-4 md:block">
-      <h2 className="text-lg font-semibold">Sidebar</h2>
-    </aside>
+    <Sidebar collapsible="offcanvas">
+      <SidebarHeader>
+        <SidebarMenu>
+          <SidebarMenuItem>
+            <SidebarMenuButton asChild size="lg">
+              <Link href="/dashboard">
+                <span className="flex size-8 items-center justify-center rounded-lg bg-gradient-to-br from-violet-500 to-indigo-600 text-white">
+                  <Layers className="size-4" />
+                </span>
+                <span className="text-base font-semibold">Devstash</span>
+              </Link>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        </SidebarMenu>
+      </SidebarHeader>
+
+      <SidebarContent>
+        <SidebarTypeNav />
+        <SidebarSeparator className="mx-2" />
+        <SidebarCollectionNav />
+      </SidebarContent>
+
+      <SidebarFooter className="border-t border-sidebar-border">
+        <SidebarUserMenu />
+      </SidebarFooter>
+
+      <SidebarRail />
+    </Sidebar>
   );
 }
