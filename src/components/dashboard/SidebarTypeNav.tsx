@@ -18,14 +18,19 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from "@/components/ui/sidebar";
+import type { ItemTypeNavSummary } from "@/lib/db/item-types";
 import { getIcon } from "@/lib/icons";
-import { ITEM_TYPES } from "@/lib/mock-data";
+
+interface SidebarTypeNavProps {
+  /** Loaded by `DashboardSidebar`; this component needs `usePathname`. */
+  types: ItemTypeNavSummary[];
+}
 
 /**
  * Collapsible "Types" group. Each row links to the type's item list and shows
  * how many items it holds.
  */
-export function SidebarTypeNav() {
+export function SidebarTypeNav({ types }: SidebarTypeNavProps) {
   const pathname = usePathname();
 
   return (
@@ -41,7 +46,7 @@ export function SidebarTypeNav() {
         <CollapsibleContent>
           <SidebarGroupContent>
             <SidebarMenu>
-              {ITEM_TYPES.map((type) => {
+              {types.map((type) => {
                 const Icon = getIcon(type.icon);
                 const href = `/items/${type.slug}`;
 
@@ -50,11 +55,11 @@ export function SidebarTypeNav() {
                     <SidebarMenuButton
                       asChild
                       isActive={pathname === href}
-                      tooltip={type.name}
+                      tooltip={type.label}
                     >
                       <Link href={href}>
                         <Icon style={{ color: type.color }} />
-                        <span>{type.name}</span>
+                        <span>{type.label}</span>
                       </Link>
                     </SidebarMenuButton>
                     <SidebarMenuBadge>{type.itemCount}</SidebarMenuBadge>

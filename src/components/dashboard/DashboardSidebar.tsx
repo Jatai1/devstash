@@ -15,13 +15,26 @@ import {
   SidebarRail,
   SidebarSeparator,
 } from "@/components/ui/sidebar";
+import { getSidebarCollections } from "@/lib/db/collections";
+import { getItemTypes } from "@/lib/db/item-types";
+import { getCurrentUserId } from "@/lib/db/user";
 
 /**
  * Dashboard sidebar: the brand, the item types, the user's collections and the
  * current user. Collapses off-canvas on desktop and renders as a drawer on
  * mobile — both driven by the `SidebarTrigger` in the top bar.
+ *
+ * Both navs highlight the active route, so they are client components and
+ * cannot query the database themselves — this server component loads their
+ * data and hands it down.
  */
-export function DashboardSidebar() {
+export async function DashboardSidebar() {
+  const userId = await getCurrentUserId();
+  const [types, collections] = await Promise.all([
+    getItemTypes(userId),
+    getSidebarCollections(userId),
+  ]);
+
   return (
     <Sidebar collapsible="offcanvas">
       <SidebarHeader>
@@ -40,9 +53,9 @@ export function DashboardSidebar() {
       </SidebarHeader>
 
       <SidebarContent>
-        <SidebarTypeNav />
+        <SidebarTypeNav types={types} />
         <SidebarSeparator className="mx-2" />
-        <SidebarCollectionNav />
+        <SidebarCollectionNav collections={collections} />
       </SidebarContent>
 
       <SidebarFooter className="border-t border-sidebar-border">
