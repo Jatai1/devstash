@@ -32,6 +32,10 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+!.env.example
+
+# prisma client is generated into src/, not node_modules, in prisma 7
+/src/generated/
 
 # vercel
 .vercel
