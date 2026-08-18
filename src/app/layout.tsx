@@ -14,13 +14,16 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "Devstash",
+  description: "Your developer knowledge hub",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
+    // `dark` is hard-coded for now — dark mode is the default and light mode is
+    // not built yet.
     <html
       lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      className={`dark ${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">{children}</body>
     </html>
