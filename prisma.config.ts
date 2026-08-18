@@ -10,7 +10,13 @@ import { defineConfig } from "prisma/config";
 // only has the runtime `DATABASE_URL`. `generate` needs no datasource URL at all, so
 // omit the datasource rather than crash; the migration commands that do need it
 // report a missing URL themselves.
-const directUrl = process.env.DIRECT_URL;
+// Vercel's Neon integration provisions the unpooled endpoint under its own names, so
+// accept those before giving up. A deploy that sets none of them can still run
+// `generate`; `migrate deploy` will say the datasource URL is missing, which is true.
+const directUrl =
+  process.env.DIRECT_URL ??
+  process.env.DATABASE_URL_UNPOOLED ??
+  process.env.POSTGRES_URL_NON_POOLING;
 
 export default defineConfig({
   schema: "prisma/schema.prisma",
