@@ -2,7 +2,7 @@
 
 <!-- Feature Name -->
 
-Prisma 7 + Neon PostgreSQL setup — see `context/features/database-spec.md`
+Seed demo data — see `context/features/seed-spec.md`
 
 ## Status
 
@@ -71,3 +71,14 @@ Completed
 - Verified the database and schema agree with `prisma migrate diff --from-config-datasource --to-schema`, which returns an empty migration
 - Feature complete — `prisma migrate status` reports 3 migrations and the schema up to date, and `npx tsc --noEmit`, `npm run lint`, `npm run build` and `npm run test:db` all pass
 - Nothing consumes the database yet: all nine dashboard components still import from `src/lib/mock-data.ts`, and the only importers of Prisma are `src/lib/prisma.ts` and the two scripts. Swapping the UI over is the next feature, and it still has to reconcile `Collection.dominantTypeId` vs. the schema's `defaultTypeId` and the mock's stored `itemCount` fields, which the schema derives from `ItemCollection`
+- Committed as `feat: set up prisma 7 with neon postgres`, merged `feature/prisma-neon-setup` into `main`, pushed to `origin`, and deleted the branch
+- Added `context/features/seed-spec.md` and set the current feature to seeding demo data — a demo user, the seven system item types, and five collections holding eighteen items, to replace `src/lib/mock-data.ts` as the dashboard's source of truth
+- Started the seed on branch `feature/seed-demo-data` and installed `bcryptjs` (3.x ships its own types, so no `@types/bcryptjs`)
+- Rewrote `prisma/seed.ts` around the spec: the demo user `demo@devstash.io` ("Demo User", `isPro: false`, `emailVerified` set, password `12345678` hashed with bcryptjs at 12 rounds), 18 per-user tags, then 5 collections holding 18 items
+- Decided against re-run handling — a second run fails on the demo user's unique email rather than silently duplicating collections and items. The seven system item types keep their `findFirst` create-or-update path, since the database already held them from the previous feature and a plain `create` would have produced 14 rows
+- Item split matches the spec: React Patterns 3 snippets, AI Workflows 3 prompts, DevOps 1 snippet + 1 command + 2 links, Terminal Commands 4 commands, Design Resources 4 links. Every text item carries real working content (hooks, a theme provider, three full prompt templates, a multi-stage Next.js Dockerfile, real shell commands) and every link points at live documentation
+- The spec left three things open, resolved here: tags are seeded, four items are pinned (one per collection except DevOps) with six favourites and three favourite collections so the dashboard's pinned section and favourite counters are not empty, and each `Collection.defaultTypeId` is set to that collection's dominant type
+- Verified against the live database: the stored hash is `$2b$12$…` and `compare("12345678", hash)` returns true while a wrong password returns false; 0 orphan items, 0 untagged items, 0 link items missing a `url`, 0 text items missing `content`
+- Feature complete — `npx prisma db seed`, `npm run test:db`, `npx tsc --noEmit`, `npm run lint` and `npm run build` all pass; the database now holds 1 user, 7 item types, 5 collections, 18 items, 18 tags and 40 item-tag links
+- The seeded user still disagrees with `mock-data.ts`, which has "John Doe" and `isPro: true` for the same email, so `SidebarUserMenu` will show a different name once the dashboard reads real data
+- The Neon production branch still has no tables and has never been seeded
