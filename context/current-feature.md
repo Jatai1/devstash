@@ -2,7 +2,7 @@
 
 <!-- Feature Name -->
 
-Dashboard collections from the database — see `context/features/dashboard-collections-spec.md`
+Dashboard items from the database — see `context/features/dashboard-items-spec.md`
 
 ## Status
 
@@ -95,3 +95,14 @@ Completed
 - Verified against the live database and the rendered page: stats show 5 collections / 3 favorites, and the grid renders the 5 seeded collections newest-first with the right counts, descriptions and border colors — DevOps (2 links, 1 command, 1 snippet) correctly resolves to Links and shows three icons
 - Feature complete — `npx tsc --noEmit`, `npm run lint` and `npm run build` all pass; committed as `feat: read dashboard collections from the database` on branch `feature/dashboard-collections`
 - Next up: the dashboard's remaining mock consumers — the pinned and recent item lists, the sidebar's collection and type navs, and the two item counters in `DashboardStats` — plus the `/collections/[id]` route the cards link to, which still 404s
+- Added `context/features/dashboard-items-spec.md` and set the current feature to reading the dashboard's pinned and recent item lists from the database, alongside the item counters in `DashboardStats`
+- Started on branch `feature/dashboard-items`; added `src/lib/db/items.ts` with `getPinnedItems`, `getRecentItems` and `getItemStats`
+- Extracted the item-type shape both card families render into `src/lib/db/item-types.ts` (`ItemTypeSummary` plus the `ITEM_TYPE_SELECT` used by every query); `collections.ts` now imports it instead of declaring its own `CollectionType`
+- `getPinnedItems` and `getRecentItems` share one private `findItems(where, take?)`, since they differ only in their `isPinned` filter and whether they cap the result — the recent list still excludes pinned items so nothing renders twice
+- Tag names are sorted alphabetically in JS: `ItemTag` carries no ordering column, so without a sort the badge row could reshuffle between renders
+- `ItemCard` now takes an `ItemSummary`: `item.type` is non-null (`Item.itemTypeId` is required, unlike the mock's `getItemType()` lookup that could miss), so the icon, tile wash and left border no longer need fallbacks, and `description` is nullable so the paragraph only renders when set
+- `formatShortDate` accepts `Date | string` now — Prisma returns a `Date` where the mock had an ISO string — and `<time dateTime>` gets `updatedAt.toISOString()`
+- `DashboardStats` reads all four counters from the database and no longer imports `mock-data.ts`; the item counts come from two `prisma.item.count` calls rather than counting rendered rows, so the "Items" card shows every item, not just the ten the recent list caps at
+- Verified against the live database and the rendered page: stats show 18 items / 5 collections / 6 favorite items / 3 favorite collections, the pinned section lists the 4 seeded pinned items newest-first, and the recent list holds 10 non-pinned items with their type colors, tags and dates
+- Feature complete — `npx tsc --noEmit`, `npm run lint` and `npm run build` pass
+- `mock-data.ts` is now only read by the three sidebar components (`SidebarTypeNav`, `SidebarCollectionNav`, `SidebarUserMenu`); the main dashboard area is entirely database-backed

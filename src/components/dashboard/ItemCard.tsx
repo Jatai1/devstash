@@ -3,11 +3,11 @@ import { Pin, Star } from "lucide-react";
 import { TypeIcon } from "@/components/dashboard/TypeIcon";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
+import type { ItemSummary } from "@/lib/db/items";
 import { formatShortDate } from "@/lib/format";
-import { getItemType, type Item } from "@/lib/mock-data";
 
 interface ItemCardProps {
-  item: Item;
+  item: ItemSummary;
 }
 
 /**
@@ -15,27 +15,27 @@ interface ItemCardProps {
  * favorite markers, description, tags, and the last-updated date.
  */
 export function ItemCard({ item }: ItemCardProps) {
-  const type = getItemType(item.typeId);
+  const { type } = item;
 
   return (
     <Card
       size="sm"
       className="border-l-4 transition-colors hover:bg-muted/40"
-      style={{ borderLeftColor: type?.color }}
+      style={{ borderLeftColor: type.color }}
     >
       <CardContent className="flex items-start gap-3">
         <span
           className="flex size-9 shrink-0 items-center justify-center rounded-lg"
           // 1a === 10% alpha, so the tile picks up a wash of the type color.
           style={{
-            backgroundColor: type && `${type.color}1a`,
-            color: type?.color,
+            backgroundColor: `${type.color}1a`,
+            color: type.color,
           }}
         >
           <TypeIcon
-            name={type?.icon ?? "File"}
+            name={type.icon}
             className="size-4"
-            aria-label={type?.name}
+            aria-label={type.label}
           />
         </span>
 
@@ -55,14 +55,16 @@ export function ItemCard({ item }: ItemCardProps) {
               />
             )}
             <time
-              dateTime={item.updatedAt}
+              dateTime={item.updatedAt.toISOString()}
               className="ml-auto shrink-0 text-xs text-muted-foreground"
             >
               {formatShortDate(item.updatedAt)}
             </time>
           </div>
 
-          <p className="text-muted-foreground">{item.description}</p>
+          {item.description && (
+            <p className="text-muted-foreground">{item.description}</p>
+          )}
 
           {item.tags.length > 0 && (
             <div className="flex flex-wrap gap-1.5">
