@@ -8,26 +8,15 @@ Stats & sidebar from the database — see `context/features/stats-sidebar-spec.m
 
 <!-- Not Started|In Progress|Completed -->
 
-In Progress
+Completed
 
 ## Goals
 
 <!-- Goals & requirements -->
 
-- Read the main area's stats from the database instead of `src/lib/mock-data.ts`, keeping the current design and layout
-- Show the system item types in the sidebar with their icons, each linking to `/items/[typename]`
-- Show the real collections in the sidebar, with a "View all collections" link under the list pointing at `/collections`
-- Keep the star icon on favorite collections; give each recent collection a colored circle based on its most-used item type
-- Put the item queries in `src/lib/db/items.ts`, following `src/lib/db/collections.ts` as the pattern
-
 ## Notes
 
 <!-- Any extra notes -->
-
-- `DashboardStats` and `src/lib/db/items.ts` already came out of the previous feature — the stats cards read all four counters from the database today, so that half of the spec may already be satisfied and mainly needs verifying rather than rewriting
-- The remaining mock consumers are the three sidebar components: `SidebarTypeNav`, `SidebarCollectionNav` and `SidebarUserMenu`
-- `/items/[slug]` and `/collections` do not exist yet, so the sidebar links will 404 until later features add those routes
-- The seeded user is "Demo User" (`isPro: false`), not the mock's "John Doe" — `SidebarUserMenu` will change what it displays once it reads real data
 
 ## History
 
