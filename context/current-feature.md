@@ -2,10 +2,6 @@
 
 <!-- Feature Name -->
 
-Dashboard UI — Phase 1 (layout shell)
-
-Spec: @context/features/dashboard-phase-1-spec.md
-
 ## Status
 
 <!-- Not Started|In Progress|Completed -->
@@ -16,29 +12,9 @@ Completed
 
 <!-- Goals & requirements -->
 
-Phase 1 of 3 for the dashboard UI. This phase builds the shell only — the sidebar
-and main area are placeholders that phases 2 and 3 fill in.
-
-- Initialize shadcn/ui and install the components the dashboard needs
-- Dashboard route at `/dashboard`
-- Main dashboard layout plus any global styles it requires
-- Dark mode by default
-- Top bar with search and a "New Item" button (display only, no behavior)
-- Placeholders for the sidebar and main area — just an `h2` reading "Sidebar" and
-  one reading "Main" for now
-
 ## Notes
 
 <!-- Any extra notes -->
-
-- Reference the screenshot at @context/screenshots/dashboard-ui-main.png for the
-  target look. It does not have to be exact.
-- Mock data already exists at @src/lib/mock-data.ts (items, collections, item
-  types, current user) — no database yet.
-- Tailwind v4: theme tokens go in an `@theme` block in `src/app/globals.css`.
-  There is no `tailwind.config.js` and there should not be one.
-- Later phases: @context/features/dashboard-phase-2-spec.md and
-  @context/features/dashboard-phase-3-spec.md
 
 ## History
 
@@ -55,3 +31,12 @@ and main area are placeholders that phases 2 and 3 fill in.
 - Wired `--font-sans`/`--font-mono` to the existing Geist `next/font` variables, and hard-coded `dark` on `<html>` so dark mode is the default
 - Added the `/dashboard` route: `DashboardTopBar` (search + New Collection/New Item, display only) plus `Sidebar`/`Main` placeholders
 - Phase 1 complete — `npm run build` and `npm run lint` pass, and `/dashboard` was verified in the browser; committed as `feat: add dashboard shell for phase 1` on branch `feat/dashboard-phase-1`
+- Merged `feat/dashboard-phase-1` into `main`
+- Started Dashboard UI Phase 2 (sidebar) per `context/features/dashboard-phase-2-spec.md` on branch `feat/dashboard-phase-2` — collapsible sidebar, item types linking to `/items/[slug]`, favorite and most recent collections, a user avatar footer, and a drawer on mobile
+- Added the shadcn `sidebar`, `avatar` and `collapsible` components (which pulled in `sheet`, `tooltip`, `skeleton` and the `use-mobile` hook)
+- Rewrote the generated `use-mobile` hook on `useSyncExternalStore` — the shipped version calls `setState` inside an effect, which the project's ESLint config rejects
+- Built the sidebar out of `DashboardSidebar` (brand header + shell), `SidebarTypeNav` (collapsible "Types" group linking to `/items/[slug]`), `SidebarCollectionNav` (collapsible "Collections" group split into Favorites and Recent) and `SidebarUserMenu` (avatar, name, email, settings); added `src/lib/icons.ts` to resolve the Lucide icon names stored in the mock data
+- The "Recent" list excludes collections already shown under Favorites, so no collection appears twice in the sidebar
+- Wired `SidebarProvider`/`SidebarInset` into the dashboard layout, reading the `sidebar_state` cookie server-side so the open/closed state survives a reload, and replaced the top bar's dummy button with `SidebarTrigger`
+- `/items/[slug]` and `/collections/[id]` routes do not exist yet, so those sidebar links 404 until later phases add them
+- Phase 2 complete — `npm run build` and `npm run lint` pass, and `/dashboard` was verified in Chrome: off-canvas collapse on desktop, drawer on mobile, both group headers toggle, no console errors
