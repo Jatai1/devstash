@@ -2,19 +2,35 @@
 
 <!-- Feature Name -->
 
+Dashboard UI Phase 3 (main area) — see `context/features/dashboard-phase-3-spec.md`
+
 ## Status
 
 <!-- Not Started|In Progress|Completed -->
 
-Completed
+In Progress
 
 ## Goals
 
 <!-- Goals & requirements -->
 
+Build the main content area to the right of the sidebar, per
+`context/features/dashboard-phase-3-spec.md` and the
+`context/screenshots/dashboard-ui-main.png` screenshot, using `src/lib/mock-data.ts`
+directly until the database exists.
+
+- 4 stats cards across the top: total items, total collections, favorite items,
+  favorite collections (not in the screenshot)
+- Recent collections
+- Pinned items
+- 10 most recent items
+
 ## Notes
 
 <!-- Any extra notes -->
+
+- The spec references `@src/lib/mock-data.js`; the actual file is
+  `src/lib/mock-data.ts`.
 
 ## History
 
@@ -40,3 +56,4 @@ Completed
 - Wired `SidebarProvider`/`SidebarInset` into the dashboard layout, reading the `sidebar_state` cookie server-side so the open/closed state survives a reload, and replaced the top bar's dummy button with `SidebarTrigger`
 - `/items/[slug]` and `/collections/[id]` routes do not exist yet, so those sidebar links 404 until later phases add them
 - Phase 2 complete — `npm run build` and `npm run lint` pass, and `/dashboard` was verified in Chrome: off-canvas collapse on desktop, drawer on mobile, both group headers toggle, no console errors
+- Started Dashboard UI Phase 3 (main area) per `context/features/dashboard-phase-3-spec.md` — stats cards, recent collections, pinned items and the 10 most recent items

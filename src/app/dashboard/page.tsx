@@ -1,13 +1,27 @@
 import type { Metadata } from "next";
 
+import { DashboardStats } from "@/components/dashboard/DashboardStats";
+import { PinnedItems } from "@/components/dashboard/PinnedItems";
+import { RecentCollections } from "@/components/dashboard/RecentCollections";
+import { RecentItems } from "@/components/dashboard/RecentItems";
+
 export const metadata: Metadata = {
   title: "Dashboard | Devstash",
 };
 
-/**
- * Main area placeholder. Phase 3 fills this in with the collections grid and
- * the pinned items list.
- */
+/** Dashboard main area: counters, recent collections, pinned and recent items. */
 export default function DashboardPage() {
-  return <h2 className="text-lg font-semibold">Main</h2>;
+  return (
+    <div className="space-y-8">
+      <header className="space-y-1">
+        <h1 className="text-3xl font-semibold tracking-tight">Dashboard</h1>
+        <p className="text-muted-foreground">Your developer knowledge hub</p>
+      </header>
+
+      <DashboardStats />
+      <RecentCollections />
+      <PinnedItems />
+      <RecentItems />
+    </div>
+  );
 }
