@@ -1,10 +1,11 @@
 # Current Feature
 
-Query and repo quick wins from the codebase audit
+<!-- Feature Name -->
 
 ## Status
 
-Completed
+<!-- Not Started|In Progress|Completed -->
+
 
 ## Goals
 
@@ -152,3 +153,6 @@ Completed
 - The work was written directly in the working tree on `main` rather than on a branch as previous features were, so it was moved onto `feature/query-repo-quick-wins` before committing and merged back from there, keeping the history consistent with earlier features
 - Reviewed before completing: both goals met, no scope creep, and the two branches the byte-identical diff could not reach were exercised against the live database — a user with no collections returns `[]` (`Prisma.join` throws on an empty array, hence the early return) and a collection with no items falls back to `defaultType` with `itemCount: 0` and no icons. The probe collection was deleted afterwards, leaving the seeded 5
 - One coupling the review noted and deliberately left alone: `itemCount` is now summed from the resolved types, so the `continue` that skips an unresolvable type would under-report it, where the old `items.length` could not. It is unreachable in practice — `Item.itemType` declares no `onDelete`, so Prisma defaults to `Restrict` and an in-use `ItemType` cannot be deleted
+- Committed as `perf: aggregate collection type counts in postgres` on `feature/query-repo-quick-wins`, merged into `main` with `--no-ff`, and the branch deleted. It was never pushed, so there was no remote branch to clean up
+- `.claude/` is still untracked and was deliberately left out of the commit: it holds the local skill and agent definitions, is unrelated to this feature, and whether it belongs in the repository is a separate call
+- Still open, unchanged by this feature: `/items/[slug]`, `/collections` and `/collections/[id]` all 404, and the Vercel Production/Preview environment variables may still hold the pre-rotation Neon credentials
