@@ -180,12 +180,18 @@ erDiagram
     }
 ```
 
-### 4.2 Prisma Schema (draft)
+### 4.2 Prisma Schema (superseded — see `prisma/schema.prisma`)
 
-> Draft only — not final. Written against **Prisma 7** + the standard Auth.js/NextAuth Prisma adapter models. All schema changes go through `prisma migrate dev` → `prisma migrate deploy`. **Never use `db push` or hand-edit the database.**
+> **This is the original design draft, kept for the reasoning behind the model. The live schema is `prisma/schema.prisma`; where the two disagree, the live schema wins.** Known divergences: `ItemType` gained `label`, `slug` and `contentKind` (plus a `@@unique([userId, slug])`), and several FK indexes were added. All schema changes go through `prisma migrate dev` → `prisma migrate deploy`. **Never use `db push` or hand-edit the database.**
 
 ```prisma
 // schema.prisma
+//
+// NOTE: the generator and datasource below are the pre-Prisma-7 shape and are NOT
+// what the project ships. Prisma 7 uses the `prisma-client` generator with a
+// required `output`, and the datasource carries no `url` — the connection strings
+// live in the root `prisma.config.ts` and in the driver adapter in
+// `src/lib/prisma.ts`.
 
 generator client {
   provider = "prisma-client-js"
