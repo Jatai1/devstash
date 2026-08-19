@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ChevronDown } from "lucide-react";
 
+import { Badge } from "@/components/ui/badge";
 import {
   Collapsible,
   CollapsibleContent,
@@ -20,6 +21,7 @@ import {
 } from "@/components/ui/sidebar";
 import type { ItemTypeNavSummary } from "@/lib/db/item-types";
 import { getIcon } from "@/lib/icons";
+import { isProItemType } from "@/lib/pro";
 
 interface SidebarTypeNavProps {
   /** Loaded by `DashboardSidebar`; this component needs `usePathname`. */
@@ -59,7 +61,18 @@ export function SidebarTypeNav({ types }: SidebarTypeNavProps) {
                     >
                       <Link href={href}>
                         <Icon style={{ color: type.color }} />
-                        <span>{type.label}</span>
+                        {/* Explicit `truncate`: the button's
+                            `[&>span:last-child]:truncate` would land on the
+                            badge instead once a row has one. */}
+                        <span className="truncate">{type.label}</span>
+                        {isProItemType(type.name) && (
+                          <Badge
+                            variant="outline"
+                            className="h-4 border-sidebar-border px-1 text-[10px] font-semibold tracking-wider text-sidebar-foreground/60"
+                          >
+                            PRO
+                          </Badge>
+                        )}
                       </Link>
                     </SidebarMenuButton>
                     <SidebarMenuBadge>{type.itemCount}</SidebarMenuBadge>
