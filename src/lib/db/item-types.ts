@@ -24,6 +24,8 @@ export const ITEM_TYPE_SELECT = {
 
 /** An item type as the sidebar's "Types" nav renders it. */
 export interface ItemTypeNavSummary extends ItemTypeSummary {
+  /** Stable identifier, e.g. "snippet" — see `isProItemType`. */
+  name: string;
   /** Route segment behind `/items/[slug]`, e.g. "snippets". */
   slug: string;
   /** How many of the user's items use this type. */
@@ -50,6 +52,7 @@ export async function getItemTypes(
     orderBy: [{ isSystem: "desc" }, { createdAt: "asc" }, { label: "asc" }],
     select: {
       ...ITEM_TYPE_SELECT,
+      name: true,
       slug: true,
       _count: { select: { items: { where: { userId } } } },
     },
