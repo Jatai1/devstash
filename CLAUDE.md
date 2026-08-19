@@ -28,6 +28,26 @@ the fast pre-check; the build repeats it.
 There is no test framework installed. Do not invent one or assume a runner exists — if
 tests are needed, ask which one to add first.
 
+### Database commands
+
+```bash
+npx prisma migrate dev --name <name>  # author + apply a migration against the Neon dev branch
+npx prisma migrate status             # what is applied vs. what is on disk
+npx prisma db seed                    # runs `tsx prisma/seed.ts`; Prisma 7 does NOT seed automatically
+npx prisma generate                   # regenerate the client into src/generated/prisma
+npm run test:db                       # scripts/test-db.ts — row counts + a rolled-back round trip
+```
+
+Prisma config lives in the root `prisma.config.ts`, not `package.json`: v7 stopped
+loading `.env` implicitly (the config imports `dotenv/config`) and dropped
+`datasource.directUrl`, so the CLI reads the unpooled `DIRECT_URL` from there while the
+app connects through the pooled `DATABASE_URL` and the `PrismaPg` adapter in
+`src/lib/prisma.ts`. The client generates to `src/generated/prisma` — gitignored and
+ESLint-ignored — with `postinstall: prisma generate` so fresh installs and deploys
+still have it.
+
+**Always use `prisma migrate` — never `db push`, and never edit the database directly.**
+
 
 ### Route component props are generated globals, not hand-written types
 
@@ -52,13 +72,13 @@ Tailwind is wired in through `@tailwindcss/postcss` in `postcss.config.mjs`. The
 `tailwind.config.js` and there should not be — theme customization in v4 goes in
 `src/app/globals.css` inside an `@theme` / `@theme inline` block.
 
-`globals.css` is currently stripped to a bare `@import "tailwindcss";`. The
-create-next-app design tokens (`--background`, `--foreground`, the `bg-background` /
-`text-foreground` utilities, dark-mode overrides) were intentionally removed, so those
-utilities do not exist. Geist Sans/Mono are still loaded via `next/font` in
-`layout.tsx` and their CSS variables are on `<html>`, but nothing maps them to
-Tailwind's `font-sans` / `font-mono` — add `--font-sans: var(--font-geist-sans)` inside
-an `@theme inline` block if that wiring is wanted back.
+The create-next-app tokens were stripped at setup, then replaced wholesale when
+shadcn/ui was initialized. `globals.css` now imports `tailwindcss`, `tw-animate-css`
+and `shadcn/tailwind.css`, declares `@custom-variant dark (&:is(.dark *))`, and maps
+the shadcn palette (`--color-background`, `--color-sidebar-*`, `--color-chart-*`, …)
+plus `--font-sans` / `--font-mono` inside `@theme inline`. Geist Sans/Mono are loaded
+via `next/font` in `layout.tsx`, which also hard-codes `dark` on `<html>` — dark mode
+is the default and light mode is not built yet.
 
 ## AGENTS.md is machine-generated
 
