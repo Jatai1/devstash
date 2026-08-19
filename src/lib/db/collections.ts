@@ -1,3 +1,4 @@
+import { Prisma } from "@/generated/prisma/client";
 import { ITEM_TYPE_SELECT, type ItemTypeSummary } from "@/lib/db/item-types";
 import { prisma } from "@/lib/prisma";
 
@@ -98,50 +99,92 @@ async function findCollections(
       isFavorite: true,
       updatedAt: true,
       defaultType: { select: ITEM_TYPE_SELECT },
-      items: {
-        select: { item: { select: { itemType: { select: ITEM_TYPE_SELECT } } } },
-      },
     },
   });
 
+  if (collections.length === 0) {
+    return [];
+  }
+
+  const breakdown = await countTypesByCollection(
+    collections.map((collection) => collection.id),
+  );
+
   return collections.map((collection) => {
-    const types = rankTypesByUse(
-      collection.items.map(({ item }) => item.itemType),
-    );
+    const types = breakdown.get(collection.id) ?? [];
 
     return {
       id: collection.id,
       name: collection.name,
       description: collection.description,
       isFavorite: collection.isFavorite,
-      itemCount: collection.items.length,
-      dominantType: types[0] ?? collection.defaultType,
-      types,
+      itemCount: types.reduce((total, entry) => total + entry.count, 0),
+      dominantType: types[0]?.type ?? collection.defaultType,
+      types: types.map((entry) => entry.type),
       updatedAt: collection.updatedAt,
     };
   });
 }
 
+/** One type a collection holds, with how many of its items use that type. */
+interface TypeUse {
+  type: ItemTypeSummary;
+  count: number;
+}
+
 /**
- * Deduplicates one type per distinct id and orders them by how many items use
- * them, breaking ties on label so the icon row is stable between renders.
+ * How many items of each type every listed collection holds, most-used first.
+ *
+ * This aggregates in the database rather than pulling the collections' items
+ * through the ORM: the counts are all the card needs, so fetching one row per
+ * item would make the payload scale with collection size for no gain. What
+ * comes back is one row per collection/type pair instead — bounded by how many
+ * item types exist, not by how many items were filed.
  */
-function rankTypesByUse(types: ItemTypeSummary[]): ItemTypeSummary[] {
-  const counts = new Map<string, { type: ItemTypeSummary; count: number }>();
+async function countTypesByCollection(
+  collectionIds: string[],
+): Promise<Map<string, TypeUse[]>> {
+  const rows = await prisma.$queryRaw<
+    { collectionId: string; itemTypeId: string; count: number }[]
+  >`
+    SELECT ic."collectionId", i."itemTypeId", COUNT(*)::int AS count
+    FROM "ItemCollection" ic
+    JOIN "Item" i ON i."id" = ic."itemId"
+    WHERE ic."collectionId" IN (${Prisma.join(collectionIds)})
+    GROUP BY ic."collectionId", i."itemTypeId"
+  `;
 
-  for (const type of types) {
-    const seen = counts.get(type.id);
-
-    if (seen) {
-      seen.count += 1;
-    } else {
-      counts.set(type.id, { type, count: 1 });
-    }
+  if (rows.length === 0) {
+    return new Map();
   }
 
-  return [...counts.values()]
-    .sort(
+  const types = await prisma.itemType.findMany({
+    where: { id: { in: [...new Set(rows.map((row) => row.itemTypeId))] } },
+    select: ITEM_TYPE_SELECT,
+  });
+  const typesById = new Map(types.map((type) => [type.id, type]));
+
+  const byCollection = new Map<string, TypeUse[]>();
+
+  for (const row of rows) {
+    const type = typesById.get(row.itemTypeId);
+
+    if (!type) {
+      continue;
+    }
+
+    const uses = byCollection.get(row.collectionId) ?? [];
+    uses.push({ type, count: row.count });
+    byCollection.set(row.collectionId, uses);
+  }
+
+  // Ties break on label so the icon row is stable between renders, matching the
+  // order the grouped rows would otherwise come back in arbitrarily.
+  for (const uses of byCollection.values()) {
+    uses.sort(
       (a, b) => b.count - a.count || a.type.label.localeCompare(b.type.label),
-    )
-    .map((entry) => entry.type);
+    );
+  }
+
+  return byCollection;
 }

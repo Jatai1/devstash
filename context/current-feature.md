@@ -1,10 +1,10 @@
 # Current Feature
 
-<!-- Feature Name -->
+Query and repo quick wins from the codebase audit
 
 ## Status
 
-<!-- Not Started|In Progress|Completed -->
+Completed
 
 ## Goals
 
@@ -135,3 +135,20 @@
 - Rewrote the Tailwind section of `CLAUDE.md`, which still described `globals.css` as a bare `@import "tailwindcss"` with the Geist fonts unmapped — both true before shadcn/ui was initialized and false since. Added a "Database commands" section covering `prisma migrate`, `db seed`, `generate`, `npm run test:db` and why config lives in `prisma.config.ts`, none of which `CLAUDE.md` mentioned despite the database being three features old
 - Relabelled `project-overview.md` §4.2 as superseded by `prisma/schema.prisma` and flagged its pre-v7 `generator`/`datasource` block inline, since that part was not just incomplete but actively wrong for Prisma 7
 - There is no `.env.production` in the repo — only `.env`, `.env.example` (both `DATABASE_URL` + `DIRECT_URL`, in agreement) and `.env.local`, which holds just Vercel's generated `VERCEL_OIDC_TOKEN`. Production and Preview values live in Vercel and are marked Sensitive, so they cannot be diffed locally; per the note above they may still hold the pre-rotation Neon credentials and are worth checking in the dashboard before the next deploy
+- Ran a full-repo audit (security, performance, code quality, file decomposition) across `src/`, `prisma/`, `scripts/` and the root configs. It returned 0 critical, 0 high and 0 medium findings — the data layer, schema, migrations and components all match the project's documented conventions
+- The audit's one finding was `scripts/__qlog.ts`, and running the checks it could not run showed it is worse than reported: `npm run lint` passes clean, but `npx tsc --noEmit` fails on an unused `@ts-expect-error` directive in that file, so `npm run build` is broken on `main` while it sits in the tree
+- Checked for N+1 empirically rather than by reading, by logging Prisma's emitted SQL through `scripts/__qlog.ts`: `findCollections` runs 5 statements and `findItems` runs 4, every relation batched into one `WHERE "id" IN (…)`, constant in the number of rows. There is no N+1 anywhere in `src/lib/db/` — the batched `IN` loading that Prisma does by default is already the fix
+- What the N+1 search did turn up is an over-fetch rather than a query-count problem: `findCollections` pulls every `ItemCollection → Item → ItemType` row of every collection only to rank types, so rows scale with collection size even though statements do not
+- Set the current feature to those two quick wins — delete `scripts/__qlog.ts` to unbreak the build, and replace the collection type breakdown with a grouped count. Auth is explicitly out of scope, since it does not exist yet
+- Confirmed `relationLoadStrategy: "join"` is not a usable shortcut here: Prisma 7.9.1 rejects the argument at runtime unless `relationJoins` is enabled in `previewFeatures`, which the schema does not set and which would not be a low-risk change
+- Deleted `scripts/__qlog.ts`, which unbroke `npx tsc --noEmit` and therefore `npm run build` — both had been failing on `main` on its unused `@ts-expect-error` directive
+- Rewrote `findCollections` in `src/lib/db/collections.ts` to aggregate the per-collection type breakdown in Postgres instead of pulling the collections' items through the ORM. The nested `items → item → itemType` select is gone; a new private `countTypesByCollection` runs one `$queryRaw` that groups `ItemCollection` joined to `Item` by `collectionId, itemTypeId`, then resolves the distinct type ids in a second `findMany`
+- The payload now scales with how many item types exist rather than how many items were filed: on the seeded data the old shape fetched 18 item join-rows to render 6 cards, the aggregate returns 7 collection-by-type rows, and the gap widens with every item added to a collection
+- `rankTypesByUse` was deleted along with it — the database now returns the counts it used to derive in JS, so the ranking is a sort over pre-counted pairs. The tie-break on `label` was kept, since grouped rows come back in no guaranteed order and the icon row must stay stable between renders
+- `itemCount` is now the sum of the grouped counts rather than `items.length`, and `dominantType` reads the first ranked pair, so both still agree with the icons the card renders
+- Used `$queryRaw` with `Prisma.join` for the `IN` list rather than string interpolation, and guarded both empty cases — `findCollections` returns early when a user has no collections, since `Prisma.join` throws on an empty array
+- Verified the refactor is behavior-preserving by diffing serialized `getRecentCollections` and `getSidebarCollections` output against the live database before and after: byte-identical. Those two exports are the only callers of `findCollections`, and `rankTypesByUse` had none outside the file
+- Feature complete — `npx tsc --noEmit`, `npm run lint`, `npm run build` and `npm run test:db` all pass, and `/dashboard` is still reported as `ƒ (Dynamic)`
+- The work was written directly in the working tree on `main` rather than on a branch as previous features were, so it was moved onto `feature/query-repo-quick-wins` before committing and merged back from there, keeping the history consistent with earlier features
+- Reviewed before completing: both goals met, no scope creep, and the two branches the byte-identical diff could not reach were exercised against the live database — a user with no collections returns `[]` (`Prisma.join` throws on an empty array, hence the early return) and a collection with no items falls back to `defaultType` with `itemCount: 0` and no icons. The probe collection was deleted afterwards, leaving the seeded 5
+- One coupling the review noted and deliberately left alone: `itemCount` is now summed from the resolved types, so the `continue` that skips an unresolvable type would under-report it, where the old `items.length` could not. It is unreachable in practice — `Item.itemType` declares no `onDelete`, so Prisma defaults to `Restrict` and an in-use `ItemType` cannot be deleted
