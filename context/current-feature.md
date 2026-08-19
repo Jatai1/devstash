@@ -1,8 +1,9 @@
-# Current Feature
+# Current Feature: Add pro badge to sidebar
 
 <!-- Feature Name -->
 
-Stats & sidebar from the database — see `context/features/stats-sidebar-spec.md`
+Add a PRO badge to the Files and Images types in the sidebar — see
+`context/features/add-pro-badge-sidebar.md`
 
 ## Status
 
@@ -14,9 +15,65 @@ Completed
 
 <!-- Goals & requirements -->
 
+- The Files and Images rows in the sidebar's "Types" nav carry a badge reading
+  `PRO`, all uppercase
+- The badge is built on the shadcn/ui `badge` component (already installed at
+  `src/components/ui/badge.tsx`)
+- The badge reads as clean and subtle — it marks the row without competing with
+  the type label, its icon, or the existing item count
+- No other type row gains a badge, and nothing else about the nav changes
+
 ## Notes
 
 <!-- Any extra notes -->
+
+- The nav lives in `src/components/dashboard/SidebarTypeNav.tsx` and renders one
+  `SidebarMenuItem` per `ItemTypeNavSummary` from `getItemTypes()` in
+  `src/lib/db/item-types.ts`
+- Each row's right edge is already occupied by a `SidebarMenuBadge` holding the
+  item count, so the PRO badge needs a home inside the row's `Link` — next to
+  the label — rather than in the trailing slot
+- Which types are Pro is a product fact, not a database one: `ItemType` has no
+  Pro column, and `project-overview.md` §5 marks `file` 🔒 Pro and `image` 🔒 Pro
+  in the item-type table. The badge is therefore driven by the type's stable
+  `name` (`"file"` / `"image"`) or `slug` (`"files"` / `"images"`) — not by
+  `label`, which is display text, and not by the signed-in user's `isPro`
+- `project-overview.md` line 471 is explicit that Pro gating is stubbed and not
+  enforced during development, so the badge is a static marker on those two
+  types. Every user sees it, including the seeded `demo@devstash.io` whose
+  `isPro` is `false`. This feature adds no gating
+- `SidebarTypeNav` is a client component (`usePathname`), so the Pro lookup has
+  to be a plain constant it can read, not a database call
+- Correcting a guess made at load time: the sidebar is `collapsible="offcanvas"`,
+  not `icon`, so there is no collapsed rail for the badge to overflow — the whole
+  panel slides away. No icon-mode guard was needed
+- Implemented on branch `feature/add-pro-badge-sidebar`:
+  - `src/lib/pro.ts` holds `PRO_ITEM_TYPE_NAMES` (`file`, `image`) and
+    `isProItemType(name)`. It keys off `ItemType.name` rather than `slug`, so
+    renaming the `/items/[slug]` route cannot silently drop the badge
+  - `ItemTypeNavSummary` gained `name`, and `getItemTypes()` selects it
+  - The badge is a shadcn `Badge` with `variant="outline"`, shrunk to `h-4` with
+    `px-1 text-[10px] font-semibold tracking-wider` and painted in
+    `text-sidebar-foreground/60` / `border-sidebar-border` so it recedes next to
+    the label
+  - The label span needed an explicit `truncate`: `SidebarMenuButton` truncates
+    via `[&>span:last-child]`, which would have landed on the badge instead
+- Runtime verification was blocked for a while: the Neon credentials in `.env`
+  had gone stale and both endpoints returned Postgres `28P01`
+  (invalid password), so `/dashboard` 500s and `npm run test:db` failed on `main`
+  too. `vercel env pull` could not recover them — `DATABASE_URL`/`DIRECT_URL`
+  exist only for Production and Preview, and both are marked Sensitive, so the
+  pull returns the literal `[SENSITIVE]`. The fix was new connection strings from
+  the Neon console
+- The refreshed `.env` points at a different endpoint (`ep-dawn-star-axk1r6c6`
+  rather than the old `ep-weathered-bird-axjdlej1`), but the branch is fully
+  migrated and seeded: 3 migrations applied, schema up to date, and 1 user,
+  7 item types, 18 items, 5 collections, 18 tags
+- Verified against the live database and the rendered page: the badge renders on
+  exactly Files and Images and on no other row, the trailing item counts still
+  render (4/3/5/0/0/0/6, summing to the 18 seeded items), the badge's overrides
+  win over the base variant in the emitted class list, and the dev server logs no
+  errors
 
 ## History
 
@@ -120,3 +177,4 @@ Completed
 - Verified against the live database and the rendered page: all 7 types link to the right `/items/[slug]` with counts 4/3/5/0/6/0/0 summing to the 18 seeded items, the 3 favorite collections show stars, Terminal Commands and DevOps show orange (Commands) and green (Links) dots, the footer reads "Demo User / demo@devstash.io", and the stats cards show 18 / 5 / 6 / 3
 - Feature complete — `npx tsc --noEmit`, `npm run lint` and `npm run build` pass, and `/dashboard` is still reported as `ƒ (Dynamic)`
 - No component reads mock data any more; the whole dashboard is database-backed. The open follow-ups are the routes the sidebar links to: `/items/[slug]` and `/collections`, plus `/collections/[id]`
+- Loaded `context/features/add-pro-badge-sidebar.md` and set the current feature to adding a PRO badge to the sidebar's Files and Images type rows
