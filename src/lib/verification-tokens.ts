@@ -1,4 +1,4 @@
-import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 
 import { prisma } from "@/lib/prisma";
 
@@ -82,26 +82,34 @@ export async function consumeVerificationToken(
     return { ok: false, reason: "invalid" };
   }
 
-  // The lookup above already matched on the hash, so this only re-checks what
-  // the index found. It costs nothing and keeps the comparison constant-time if
-  // this ever moves to a scan.
-  const expected = Buffer.from(record.token);
-  const actual = Buffer.from(hashToken(rawToken));
+  // Deleting first is what makes the link single-use, and the delete is the
+  // thing that decides it: two concurrent clicks both find the row, but only
+  // one delete affects a row, and the loser reports an invalid token rather
+  // than verifying twice. Link prefetchers in mail clients and security
+  // scanners make that race real rather than theoretical.
+  const { count } = await prisma.verificationToken.deleteMany({
+    where: { token: record.token },
+  });
 
-  if (expected.length !== actual.length || !timingSafeEqual(expected, actual)) {
+  if (count === 0) {
     return { ok: false, reason: "invalid" };
   }
-
-  await prisma.verificationToken.delete({ where: { token: record.token } });
 
   if (record.expires < new Date()) {
     return { ok: false, reason: "expired" };
   }
 
-  await prisma.user.update({
-    where: { email: record.identifier },
-    data: { emailVerified: new Date() },
-  });
+  try {
+    await prisma.user.update({
+      where: { email: record.identifier },
+      data: { emailVerified: new Date() },
+    });
+  } catch {
+    // `VerificationToken` keys on an email rather than a user id, so nothing
+    // removes a token when its account is deleted. A link for an account that
+    // no longer exists is indistinguishable from a bad one.
+    return { ok: false, reason: "invalid" };
+  }
 
   return { ok: true, email: record.identifier };
 }
