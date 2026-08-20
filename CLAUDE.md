@@ -58,9 +58,16 @@ Every Neon MCP call — `run_sql`, `run_sql_transaction`, `describe_branch`,
 - **Project:** `wandering-silence-70846346` (the only Neon project on the account, named
   "Jason's project" in the console — it is the Devstash database). Never operate on any
   other project, and never create, delete, or reset a project.
-- **Branch:** pass the **`development`** branch's `branchId` explicitly on every call that
-  accepts one. Never rely on the default-branch fallback: the account default is
-  `production`, so an omitted `branchId` silently reads and writes production.
+- **Branch:** pass the **`development`** branch's `branchId` — `br-crimson-cake-axnj0luc`,
+  compute `ep-calm-boat-axkbmcbc` — explicitly on every call that accepts one. Never rely
+  on the default-branch fallback: the account default is `production`, so an omitted
+  `branchId` silently reads and writes production.
+
+The local `.env` points both `DATABASE_URL` and `DIRECT_URL` at that development branch, so
+`npm run dev`, `npm run test:db` and the Prisma CLI all stay off production. If those URLs
+ever have to be replaced, check the endpoint before pasting: the Neon console hands out
+production's string by default, and a rotation that way is how local development ended up
+writing to production for several features.
 
 **Production (`br-polished-bar-axbqcz56`) is off limits unless I name it in that turn.**
 "Use production", "check prod", or an explicit branch ID counts as naming it; a general
