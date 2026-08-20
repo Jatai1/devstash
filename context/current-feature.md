@@ -1,4 +1,4 @@
-# Current Feature: Auth Phase 2 — Credentials (Email/Password) Provider
+# Current Feature
 
 ## Status
 
@@ -6,52 +6,11 @@ Not Started
 
 ## Goals
 
-- Add a Credentials provider so users can sign in with email and password alongside GitHub
-- Hash and verify passwords with `bcryptjs` (already installed for the seed)
-- Add a `POST /api/auth/register` route that creates a user from name, email, password, confirmPassword
-- Keep the split config pattern intact — the Credentials provider must not pull Prisma or bcrypt into the edge bundle
-- GitHub OAuth from phase 1 must keep working unchanged
+<!-- Bullet points of what success looks like -->
 
 ## Notes
 
-Spec: `context/features/auth-phase-2-spec.md` (phase 3 exists but is out of scope here).
-
-Split-pattern shape the spec calls for:
-
-- `src/auth.config.ts` — add the Credentials provider with an `authorize: () => null` placeholder, so
-  the edge-safe half knows the provider exists without importing bcrypt or the database
-- `src/auth.ts` — override that provider with the real `authorize` that looks the user up through
-  Prisma and compares the password with `bcryptjs`
-
-Registration route `POST /api/auth/register`:
-
-- Accepts `name`, `email`, `password`, `confirmPassword`
-- Validates that the passwords match
-- Rejects an email that already has a user
-- Hashes with `bcryptjs` and creates the user
-- Returns a success or error response
-
-What already exists, so this phase does not repeat it:
-
-- `User.password` is already in `prisma/schema.prisma` (`String?`, "hashed, only set for credentials
-  sign-up"), so **no migration is needed** despite the spec listing one as conditional
-- `bcryptjs` 3.x is installed (ships its own types); `prisma/seed.ts` already hashes the demo user's
-  password at 12 rounds — match that cost factor
-- The seeded `demo@devstash.io` account has password `12345678`, so credentials sign-in can be tested
-  against it without registering first
-- Phase 1 left `src/auth.config.ts`, `src/auth.ts`, `src/app/api/auth/[...nextauth]/route.ts`,
-  `src/proxy.ts` and `src/types/next-auth.d.ts` in place; note `auth.ts` currently spreads
-  `...authConfig` *after* `adapter`/`session`, which matters when overriding `providers`
-
-Still using NextAuth's default sign-in page — no custom `pages.signIn` until phase 3.
-
-Testing:
-
-1. `curl -X POST http://localhost:3000/api/auth/register -H "Content-Type: application/json" -d '{"name":"Test","email":"test@test.com","password":"password123","confirmPassword":"password123"}'`
-2. Sign in at `/api/auth/signin` with those credentials and confirm the redirect to `/dashboard`
-3. Confirm GitHub OAuth still works
-
-Reference: https://authjs.dev/getting-started/authentication/credentials
+<!-- Additional context, constraints, or details from the spec -->
 
 ## History
 
@@ -208,3 +167,22 @@ Reference: https://authjs.dev/getting-started/authentication/credentials
 - The unrelated Neon MCP branch-scoping section that had accumulated in `CLAUDE.md` went in as its own `docs:` commit rather than riding along with the auth work
 - One thing to fix in phase 2 rather than now: `src/auth.ts` spreads `...authConfig` *after* `adapter` and `session`. Harmless today, since the config half only carries `providers`, but phase 2 has to override `providers` and the spread order decides which one wins
 - Loaded `context/features/auth-phase-2-spec.md` and set the current feature to Auth Phase 2 — the Credentials provider and the registration route
+- Built phase 2 on branch `feature/auth-phase-2`. No migration was needed: `User.password` was already in the schema from the seed feature, so the spec's conditional migration step was a no-op
+- Installed `zod@4` — the coding standards require Zod for input validation and the Auth.js credentials docs use it for `authorize`. Schemas live in `src/lib/auth-schemas.ts` so the provider and the registration route share one definition
+- `signInSchema` is deliberately looser than `registerSchema`: sign-in only has to recognize a password that was already accepted, and applying today's rules to an existing account would lock out anyone who signed up under older ones
+- The password cap is enforced over `TextEncoder`-encoded byte length rather than `.max()` on characters. bcrypt hashes only the first 72 *bytes*, so 72 emoji (288 bytes) passed a character check and were silently truncated to a fraction of their entropy — the review caught it and the fix rejects them
+- The split pattern works as the spec described: `auth.config.ts` holds a Credentials provider whose `authorize` returns `null`, which is enough for the edge half to know the provider and its `/api/auth/callback/credentials` route exist, and `auth.ts` swaps that entry for the real one. Returning `null` is also the safe failure mode if the swap is ever missed
+- The swap matches on `provider.id === "credentials"` rather than array position, guarded by `typeof provider !== "function"` because `auth.config.ts` passes `GitHub` as the uncalled provider function. Adding a provider to the config therefore cannot quietly break it
+- Fixed the spread order phase 1 flagged: `...authConfig` now comes first, since `providers` is deliberately overridden below it
+- Every `authorize` failure returns `null` rather than a specific reason — Auth.js puts the code in the redirect URL, and separating "no such email" from "wrong password" would confirm which accounts exist. A GitHub-only user has no stored password and cannot sign in this way
+- `POST /api/auth/register` returns field-keyed errors via `z.flattenError` (the Zod 4 spelling; `error.flatten()` is the deprecated Zod 3 method) so the phase 3 form can render them inline. It catches `P2002` as well as checking for an existing user first, since two requests can race to the same insert
+- A static route segment beats the `[...nextauth]` catch-all beside it, so `/api/auth/register` and Auth.js coexist; the production build lists them as separate routes
+- Verified the edge bundle empirically rather than by assertion: `.next/server/middleware.js` traces to two chunks totalling ~394 KB with 5 references to `credentials` and zero to `bcrypt`, `PrismaClient` or `generated/prisma`
+- Verified at runtime: register returns `201`; duplicate (including `TEST@test.com`, since emails normalize to lowercase) returns `409`; mismatch, bad email, short password, whitespace-only name and non-JSON all return `400`; credentials sign-in `302`s to `/dashboard` with `user.id` in the session; wrong password and unknown email fail identically; the seeded `demo@devstash.io` / `12345678` signs in; GitHub still `302`s to `github.com/login/oauth/authorize`
+- Three findings logged rather than fixed, all beyond the phase: Postgres unique indexes are case-sensitive while the adapter stores whatever GitHub sends, so a GitHub account at `Jason@Test.com` would not collide with a registration at `jason@test.com`; Auth.js refuses to auto-link a GitHub sign-in to an existing password account (`OAuthAccountNotLinked`, the safe default we keep), which phase 3's UI needs to render as something better than an error code; and neither endpoint is rate limited while the `409` confirms an email is registered
+- Feature complete — `npx tsc --noEmit`, `npm run lint` and `npm run build` pass. Committed as `feat: add credentials sign-in and a registration route` and merged into `main` with `--no-ff`
+- Discovered mid-feature that the Neon project had **no `development` branch at all**: `wandering-silence-70846346` held only `production` (`br-polished-bar-axbqcz56`), whose compute `ep-dawn-star-axk1r6c6` is exactly what the local `.env` pointed at. Local development had been reading and writing production since the credential rotation several features earlier — the console hands out production's connection string by default, and the rotation pasted it in
+- Rather than fall back to production for a cleanup delete, stopped and asked; the two throwaway registrations (`test@test.com`, `exact72@test.com`) were then removed from production by explicit permission. `jason@test.com` was kept at the user's request, and `jasonluu11@hotmail.com` was left alone — it carries the only `Account` row, so phase 1's GitHub OAuth round trip did complete after all
+- Created the `development` branch (`br-crimson-cake-axnj0luc`, compute `ep-calm-boat-axkbmcbc`) off production and repointed both `DATABASE_URL` and `DIRECT_URL` at it. Verified after the switch: `prisma migrate status` reports the new endpoint and 3 migrations up to date, `npm run test:db` passes, and `/dashboard` renders the seeded collections for `demo@devstash.io`. The dev server needed a restart, since the Prisma pool was still bound to the old endpoint
+- The fork is a point-in-time copy, so the branches drift from here — `jason@test.com` and `jasonluu11@hotmail.com` now exist independently on both. `CLAUDE.md` gained the development branch's id and a warning about where replacement connection strings come from
+- Still open: `/items/[slug]`, `/collections` and `/collections/[id]` all 404; `src/lib/db/user.ts` still resolves the seeded demo account rather than the session, so whoever signs in sees demo data; and the Vercel Production/Preview environment variables were never checked and may still hold pre-rotation credentials
