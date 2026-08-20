@@ -10,7 +10,11 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { getAuthErrorMessage } from "@/lib/auth-errors";
+import {
+  EMAIL_NOT_VERIFIED_CODE,
+  getAuthErrorMessage,
+  resolveAuthErrorCode,
+} from "@/lib/auth-errors";
 
 export const metadata: Metadata = {
   title: "Sign in · Devstash",
@@ -19,7 +23,13 @@ export const metadata: Metadata = {
 export default async function SignInPage({
   searchParams,
 }: PageProps<"/sign-in">) {
-  const { callbackUrl, error, registered } = await searchParams;
+  const { callbackUrl, error, code, verified, unverified } = await searchParams;
+
+  const failureCode = resolveAuthErrorCode(
+    typeof error === "string" ? error : undefined,
+    typeof code === "string" ? code : undefined,
+  );
+  const isUnverified = failureCode === EMAIL_NOT_VERIFIED_CODE;
 
   return (
     <Card>
@@ -30,22 +40,27 @@ export default async function SignInPage({
         </CardDescription>
       </CardHeader>
 
-      <CardContent className="flex flex-col gap-4">
-        {/* Set by the register form after a successful signup, so arriving here
-            reads as the next step rather than as a failure. */}
-        {registered ? (
-          <p className="rounded-md border border-border bg-muted/40 px-3 py-2 text-sm">
-            Your account is ready. Sign in to continue.
-          </p>
-        ) : null}
-
+      <CardContent>
         <SignInForm
+          // Passed in rather than rendered here so the form can drop it once a
+          // sign-in attempt produces an error, instead of leaving a stale
+          // notice sitting above the error. Set by /verify-email once a token
+          // is consumed; registration has its own page and no longer lands
+          // here.
+          notice={
+            verified ? "Your email is verified. Sign in to continue." : undefined
+          }
           callbackUrl={typeof callbackUrl === "string" ? callbackUrl : "/dashboard"}
           // Auth.js redirects its own failures here as `?error=<code>`; this is
           // where `OAuthAccountNotLinked` becomes a sentence rather than a code.
           initialError={
-            typeof error === "string" ? getAuthErrorMessage(error) : undefined
+            typeof failureCode === "string"
+              ? getAuthErrorMessage(failureCode)
+              : undefined
           }
+          // Arrivals from an expired or already-used link get the resend form
+          // straight away, without having to fail a sign-in first.
+          initialEmailNotVerified={Boolean(unverified) || isUnverified}
         />
       </CardContent>
 
