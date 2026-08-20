@@ -1,10 +1,11 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import { useFormStatus } from "react-dom";
 
 import { signInWithCredentials, signInWithGitHub } from "@/actions/auth";
 import type { SignInState } from "@/actions/auth";
+import { ResendVerificationForm } from "@/components/auth/ResendVerificationForm";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -14,6 +15,10 @@ interface SignInFormProps {
   callbackUrl: string;
   /** An Auth.js failure that happened during a redirect, already humanized. */
   initialError?: string;
+  /** Opens the resend form immediately, for arrivals from an expired link. */
+  initialEmailNotVerified?: boolean;
+  /** Neutral status message, shown only while nothing has failed. */
+  notice?: string;
 }
 
 interface SubmitButtonProps {
@@ -40,11 +45,21 @@ function SubmitButton({ children, pendingLabel, variant }: SubmitButtonProps) {
   );
 }
 
-export function SignInForm({ callbackUrl, initialError }: SignInFormProps) {
+export function SignInForm({
+  callbackUrl,
+  initialError,
+  initialEmailNotVerified,
+  notice,
+}: SignInFormProps) {
   const [state, formAction] = useActionState<SignInState, FormData>(
     signInWithCredentials,
-    initialError ? { error: initialError } : {},
+    initialError || initialEmailNotVerified
+      ? { error: initialError, emailNotVerified: initialEmailNotVerified }
+      : {},
   );
+  // Keeps the resend field prefilled with whatever was just typed, so the user
+  // is not asked for an address they have already entered.
+  const [email, setEmail] = useState("");
 
   return (
     <div className="flex flex-col gap-4">
@@ -58,6 +73,10 @@ export function SignInForm({ callbackUrl, initialError }: SignInFormProps) {
           >
             {state.error}
           </p>
+        ) : notice ? (
+          <p className="rounded-md border border-border bg-muted/40 px-3 py-2 text-sm">
+            {notice}
+          </p>
         ) : null}
 
         <div className="grid gap-2">
@@ -68,6 +87,8 @@ export function SignInForm({ callbackUrl, initialError }: SignInFormProps) {
             type="email"
             autoComplete="email"
             placeholder="you@example.com"
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
             required
           />
         </div>
@@ -85,6 +106,12 @@ export function SignInForm({ callbackUrl, initialError }: SignInFormProps) {
 
         <SubmitButton pendingLabel="Signing in…">Sign in</SubmitButton>
       </form>
+
+      {/* Only offered when a resend would actually help — the password was
+          right and the address is simply unconfirmed. */}
+      {state.emailNotVerified ? (
+        <ResendVerificationForm defaultEmail={email} />
+      ) : null}
 
       <div className="flex items-center gap-3 text-xs text-muted-foreground">
         <span className="h-px flex-1 bg-border" />

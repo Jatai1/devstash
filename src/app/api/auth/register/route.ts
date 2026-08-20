@@ -4,7 +4,9 @@ import { z } from "zod";
 
 import { Prisma } from "@/generated/prisma/client";
 import { registerSchema } from "@/lib/auth-schemas";
+import { sendVerificationEmail } from "@/lib/email/send-verification-email";
 import { prisma } from "@/lib/prisma";
+import { createVerificationToken } from "@/lib/verification-tokens";
 
 // Matches the cost factor `prisma/seed.ts` uses, so the seeded demo account and
 // a freshly registered one are hashed the same way.
@@ -65,6 +67,26 @@ export async function POST(request: Request) {
       data: { name, email, password: await hash(password, BCRYPT_ROUNDS) },
       select: { id: true, name: true, email: true },
     });
+
+    // The account exists but cannot sign in until this link is clicked, so a
+    // failed send leaves a real dead end. Report it as a 502 with the account
+    // still in place: the address is now taken, so retrying registration would
+    // only 409, and the way out is to request a fresh link.
+    try {
+      const token = await createVerificationToken(email);
+
+      await sendVerificationEmail({ to: email, name, token });
+    } catch (sendError) {
+      console.error("Verification email failed to send", sendError);
+
+      return NextResponse.json(
+        {
+          error:
+            "Your account was created, but the verification email could not be sent. Request a new link to finish signing up.",
+        },
+        { status: 502 },
+      );
+    }
 
     return NextResponse.json({ user }, { status: 201 });
   } catch (error) {
