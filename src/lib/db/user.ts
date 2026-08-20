@@ -1,16 +1,10 @@
 import { cache } from "react";
 
+import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
-
-/** The account `prisma/seed.ts` creates. */
-const DEMO_USER_EMAIL = "demo@devstash.io";
 
 /**
  * The user every dashboard query is scoped to.
- *
- * There is no auth yet, so this resolves the seeded demo account. Once Auth.js
- * is wired up this reads the session instead, and nothing else has to change —
- * every caller already treats the id as "whoever is signed in".
  *
  * `cache` dedupes the lookup, so several server components on one page share a
  * single query per request.
@@ -32,22 +26,40 @@ export interface UserSummary {
 }
 
 /**
- * The signed-in user's profile. Shares `getCurrentUserId`'s caveat: it resolves
- * the seeded demo account until Auth.js lands, and is cached per request.
+ * The signed-in user's profile, read from the Auth.js session and refreshed
+ * from the database.
+ *
+ * The session is a JWT, so its `name`/`email`/`image` claims are whatever they
+ * were when the token was issued and go stale after a profile edit. Only the id
+ * is taken from it; the rest comes from the row.
+ *
+ * Throwing on a missing session is deliberate: `src/proxy.ts` guarantees one on
+ * every route it matches, so reaching this means an unprotected route called a
+ * function that only makes sense for a signed-in user. Callers should not have
+ * to null-check what the proxy already established.
  */
 export const getCurrentUser = cache(async (): Promise<UserSummary> => {
-  const user = await prisma.user.findUnique({
-    where: { email: DEMO_USER_EMAIL },
-    select: { id: true, name: true, email: true, image: true },
-  });
+  const session = await auth();
+  const userId = session?.user?.id;
 
-  if (!user) {
+  if (!userId) {
     throw new Error(
-      `No user found for ${DEMO_USER_EMAIL} — run \`npx prisma db seed\`.`,
+      "No signed-in user. This route is missing from the `src/proxy.ts` matcher.",
     );
   }
 
-  // `User.email` is nullable in the Auth.js schema, but it is the column this
-  // lookup matched on, so a returned row always has one.
-  return { ...user, email: user.email ?? DEMO_USER_EMAIL };
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { id: true, name: true, email: true, image: true },
+  });
+
+  // The session outlives the row it points at: deleting a user leaves their
+  // JWT valid until it expires, and it still carries their old id.
+  if (!user) {
+    throw new Error(`Session refers to user ${userId}, which no longer exists.`);
+  }
+
+  // `User.email` is nullable in the Auth.js schema, but every path that creates
+  // one — the adapter, the register route and the seed — sets it.
+  return { ...user, email: user.email ?? "" };
 });

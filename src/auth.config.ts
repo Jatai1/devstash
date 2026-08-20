@@ -14,6 +14,15 @@ import GitHub from "next-auth/providers/github";
  * environment on its own; there is nothing to pass it.
  */
 export default {
+  // Both halves need these: the proxy builds its redirect from `signIn`, and
+  // Auth.js sends its own failures (a rejected callback, `OAuthAccountNotLinked`)
+  // to `error`. Pointing `error` at the sign-in page keeps those on a form the
+  // user can act on instead of Auth.js's built-in error screen.
+  pages: {
+    signIn: "/sign-in",
+    error: "/sign-in",
+  },
+
   providers: [
     GitHub,
     /**
