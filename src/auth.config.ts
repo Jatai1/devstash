@@ -1,4 +1,5 @@
 import type { NextAuthConfig } from "next-auth";
+import Credentials from "next-auth/providers/credentials";
 import GitHub from "next-auth/providers/github";
 
 /**
@@ -13,5 +14,23 @@ import GitHub from "next-auth/providers/github";
  * environment on its own; there is nothing to pass it.
  */
 export default {
-  providers: [GitHub],
+  providers: [
+    GitHub,
+    /**
+     * A placeholder. The proxy has to know this provider exists — the field
+     * shape and the `/api/auth/callback/credentials` route come from here —
+     * but the real check needs bcrypt and Prisma, neither of which can run at
+     * the edge. `src/auth.ts` swaps this entry for the one that authenticates.
+     *
+     * `authorize` returning `null` means nothing can sign in through this
+     * instance, which is the safe failure mode if the swap is ever missed.
+     */
+    Credentials({
+      credentials: {
+        email: { label: "Email", type: "email" },
+        password: { label: "Password", type: "password" },
+      },
+      authorize: () => null,
+    }),
+  ],
 } satisfies NextAuthConfig;
