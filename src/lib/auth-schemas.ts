@@ -29,6 +29,11 @@ export const signInSchema = z.object({
   password: z.string().min(1),
 });
 
+/** What the "send me another link" form accepts. */
+export const resendVerificationSchema = z.object({
+  email: z.email().toLowerCase(),
+});
+
 export const registerSchema = z
   .object({
     name: z.string().trim().min(1, "Name is required").max(100),

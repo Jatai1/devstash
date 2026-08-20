@@ -1,11 +1,26 @@
 import { PrismaAdapter } from "@auth/prisma-adapter";
 import { compare } from "bcryptjs";
-import NextAuth from "next-auth";
+import NextAuth, { CredentialsSignin } from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 
 import authConfig from "@/auth.config";
+import { EMAIL_NOT_VERIFIED_CODE } from "@/lib/auth-errors";
 import { signInSchema } from "@/lib/auth-schemas";
 import { prisma } from "@/lib/prisma";
+
+/**
+ * Thrown when the password was right but the address was never confirmed.
+ *
+ * This is the one `authorize` failure that gets its own code. Auth.js puts
+ * `code` in the redirect URL, so it must not hint at anything sensitive — but
+ * by this point the caller has already proven they know the account's password,
+ * so telling them the address is unverified reveals nothing they could not
+ * already infer, and without it they would be stuck on "email and password do
+ * not match" for a password that is in fact correct.
+ */
+class EmailNotVerifiedError extends CredentialsSignin {
+  code = EMAIL_NOT_VERIFIED_CODE;
+}
 
 /**
  * The Credentials provider that actually authenticates, replacing the
@@ -32,7 +47,14 @@ const credentials = Credentials({
 
     const user = await prisma.user.findUnique({
       where: { email },
-      select: { id: true, name: true, email: true, image: true, password: true },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        image: true,
+        password: true,
+        emailVerified: true,
+      },
     });
 
     // A user created through GitHub has no password, so there is nothing to
@@ -43,6 +65,12 @@ const credentials = Credentials({
 
     if (!(await compare(password, user.password))) {
       return null;
+    }
+
+    // Checked only after the password matches, so an unverified-account
+    // response cannot be used to probe which addresses are registered.
+    if (!user.emailVerified) {
+      throw new EmailNotVerifiedError();
     }
 
     return { id: user.id, name: user.name, email: user.email, image: user.image };
@@ -75,6 +103,26 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
       ? credentials
       : provider,
   ),
+
+  events: {
+    /**
+     * OAuth accounts arrive verified, but the Prisma adapter does not stamp
+     * `emailVerified` for them — it only does so for the Email provider. That
+     * left the column claiming a GitHub user's address was unconfirmed when
+     * GitHub had already confirmed it. Harmless while the gate lives inside
+     * `authorize` (an OAuth-only user has no password and never reaches it),
+     * but the column should not lie, and anything later that reads it would
+     * inherit the bug.
+     */
+    async linkAccount({ user }) {
+      if (user.id) {
+        await prisma.user.update({
+          where: { id: user.id },
+          data: { emailVerified: new Date() },
+        });
+      }
+    },
+  },
 
   callbacks: {
     session({ session, token }) {
