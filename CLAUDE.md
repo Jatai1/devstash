@@ -48,6 +48,31 @@ still have it.
 
 **Always use `prisma migrate` — never `db push`, and never edit the database directly.**
 
+### Neon MCP: always the devstash project, always the development branch
+
+Every Neon MCP call — `run_sql`, `run_sql_transaction`, `describe_branch`,
+`get_database_tables`, `describe_table_schema`, `prepare_database_migration`,
+`explain_sql_statement`, all of them — must be scoped to **this** project and to its
+**development** branch:
+
+- **Project:** `wandering-silence-70846346` (the only Neon project on the account, named
+  "Jason's project" in the console — it is the Devstash database). Never operate on any
+  other project, and never create, delete, or reset a project.
+- **Branch:** pass the **`development`** branch's `branchId` explicitly on every call that
+  accepts one. Never rely on the default-branch fallback: the account default is
+  `production`, so an omitted `branchId` silently reads and writes production.
+
+**Production (`br-polished-bar-axbqcz56`) is off limits unless I name it in that turn.**
+"Use production", "check prod", or an explicit branch ID counts as naming it; a general
+request like "show me the collections" or "add a column" never does. Permission applies to
+the single request that granted it and does not carry forward to later turns.
+
+If the `development` branch does not exist or cannot be resolved, **stop and ask** — do
+not fall back to `production`, and do not create the branch without asking first.
+
+Reads are as scoped as writes here: querying production is still touching production, and
+its rows may be real user data rather than seed data.
+
 
 ### Route component props are generated globals, not hand-written types
 
