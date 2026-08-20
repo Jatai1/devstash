@@ -78,7 +78,9 @@ export function RegisterForm() {
       if (response.ok) {
         // `replace` rather than `push`: a completed registration should not be
         // reachable with the back button.
-        router.replace("/sign-in?registered=1");
+        router.replace(
+          `/check-email?email=${encodeURIComponent(parsed.data.email)}`,
+        );
         return;
       }
 

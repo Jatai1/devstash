@@ -23,8 +23,7 @@ export const metadata: Metadata = {
 export default async function SignInPage({
   searchParams,
 }: PageProps<"/sign-in">) {
-  const { callbackUrl, error, code, registered, verified, unverified } =
-    await searchParams;
+  const { callbackUrl, error, code, verified, unverified } = await searchParams;
 
   const failureCode = resolveAuthErrorCode(
     typeof error === "string" ? error : undefined,
@@ -44,16 +43,12 @@ export default async function SignInPage({
       <CardContent>
         <SignInForm
           // Passed in rather than rendered here so the form can drop it once a
-          // sign-in attempt produces an error — otherwise a stale "please
-          // verify" notice would sit directly above the error saying the same
-          // thing. `registered` is set by the register form, `verified` by
-          // /verify-email after a token is consumed.
+          // sign-in attempt produces an error, instead of leaving a stale
+          // notice sitting above the error. Set by /verify-email once a token
+          // is consumed; registration has its own page and no longer lands
+          // here.
           notice={
-            registered
-              ? "Please verify your account."
-              : verified
-                ? "Your email is verified. Sign in to continue."
-                : undefined
+            verified ? "Your email is verified. Sign in to continue." : undefined
           }
           callbackUrl={typeof callbackUrl === "string" ? callbackUrl : "/dashboard"}
           // Auth.js redirects its own failures here as `?error=<code>`; this is
