@@ -17,8 +17,12 @@ export const proxy = auth((req) => {
     return;
   }
 
-  // No custom sign-in page yet, so this is Auth.js's built-in one.
-  const signInUrl = new URL("/api/auth/signin", req.nextUrl.origin);
+  // The custom page from `auth.config.ts`, read from the config rather than
+  // repeated here so the two cannot drift apart.
+  const signInUrl = new URL(
+    authConfig.pages.signIn,
+    req.nextUrl.origin,
+  );
 
   // Send the user back where they were headed once they are signed in.
   signInUrl.searchParams.set(
@@ -30,7 +34,8 @@ export const proxy = auth((req) => {
 });
 
 export const config = {
-  // Scoped to the dashboard, so `/api/auth/*` and the public landing page never
-  // run through this and cannot redirect-loop.
-  matcher: ["/dashboard/:path*"],
+  // Scoped to the signed-in routes, so `/api/auth/*`, `/sign-in`, `/register`
+  // and the public landing page never run through this and cannot
+  // redirect-loop.
+  matcher: ["/dashboard/:path*", "/profile/:path*"],
 };
