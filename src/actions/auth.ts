@@ -3,7 +3,11 @@
 import { AuthError, CredentialsSignin } from "next-auth";
 
 import { signIn, signOut } from "@/auth";
-import { EMAIL_NOT_VERIFIED_CODE, getAuthErrorMessage } from "@/lib/auth-errors";
+import {
+  EMAIL_NOT_VERIFIED_CODE,
+  getAuthErrorMessage,
+  resolveAuthErrorCode,
+} from "@/lib/auth-errors";
 import { resendVerificationSchema, signInSchema } from "@/lib/auth-schemas";
 import { sendVerificationEmail } from "@/lib/email/send-verification-email";
 import { prisma } from "@/lib/prisma";
@@ -70,12 +74,16 @@ export async function signInWithCredentials(
     // sign-in and belongs on the form; anything else — including the redirect
     // Next.js throws on success — has to keep propagating.
     if (error instanceof AuthError) {
-      // A `CredentialsSignin` subclass carries the specific reason on `code`,
-      // while `type` stays the generic "CredentialsSignin" for all of them —
-      // so reading `type` alone would flatten "unverified" into "wrong
-      // password". `code` is only set by our own thrown errors.
-      const code =
-        error instanceof CredentialsSignin ? error.code : error.type;
+      // `type` is the generic "CredentialsSignin" for every credentials
+      // failure, so it alone would flatten "unverified" into "wrong password".
+      // `code` is the specific half — but Auth.js sets its own default
+      // "credentials" there for an ordinary rejection, which has no message of
+      // its own, so the same resolver the sign-in page uses picks whichever
+      // actually names something.
+      const code = resolveAuthErrorCode(
+        error.type,
+        error instanceof CredentialsSignin ? error.code : undefined,
+      );
 
       return {
         error: getAuthErrorMessage(code),
