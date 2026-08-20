@@ -1,19 +1,57 @@
-# Current Feature
-
-<!-- Feature Name -->
+# Current Feature: Auth Phase 2 — Credentials (Email/Password) Provider
 
 ## Status
 
-<!-- Not Started|In Progress|Completed -->
-
+Not Started
 
 ## Goals
 
-<!-- Goals & requirements -->
+- Add a Credentials provider so users can sign in with email and password alongside GitHub
+- Hash and verify passwords with `bcryptjs` (already installed for the seed)
+- Add a `POST /api/auth/register` route that creates a user from name, email, password, confirmPassword
+- Keep the split config pattern intact — the Credentials provider must not pull Prisma or bcrypt into the edge bundle
+- GitHub OAuth from phase 1 must keep working unchanged
 
 ## Notes
 
-<!-- Any extra notes -->
+Spec: `context/features/auth-phase-2-spec.md` (phase 3 exists but is out of scope here).
+
+Split-pattern shape the spec calls for:
+
+- `src/auth.config.ts` — add the Credentials provider with an `authorize: () => null` placeholder, so
+  the edge-safe half knows the provider exists without importing bcrypt or the database
+- `src/auth.ts` — override that provider with the real `authorize` that looks the user up through
+  Prisma and compares the password with `bcryptjs`
+
+Registration route `POST /api/auth/register`:
+
+- Accepts `name`, `email`, `password`, `confirmPassword`
+- Validates that the passwords match
+- Rejects an email that already has a user
+- Hashes with `bcryptjs` and creates the user
+- Returns a success or error response
+
+What already exists, so this phase does not repeat it:
+
+- `User.password` is already in `prisma/schema.prisma` (`String?`, "hashed, only set for credentials
+  sign-up"), so **no migration is needed** despite the spec listing one as conditional
+- `bcryptjs` 3.x is installed (ships its own types); `prisma/seed.ts` already hashes the demo user's
+  password at 12 rounds — match that cost factor
+- The seeded `demo@devstash.io` account has password `12345678`, so credentials sign-in can be tested
+  against it without registering first
+- Phase 1 left `src/auth.config.ts`, `src/auth.ts`, `src/app/api/auth/[...nextauth]/route.ts`,
+  `src/proxy.ts` and `src/types/next-auth.d.ts` in place; note `auth.ts` currently spreads
+  `...authConfig` *after* `adapter`/`session`, which matters when overriding `providers`
+
+Still using NextAuth's default sign-in page — no custom `pages.signIn` until phase 3.
+
+Testing:
+
+1. `curl -X POST http://localhost:3000/api/auth/register -H "Content-Type: application/json" -d '{"name":"Test","email":"test@test.com","password":"password123","confirmPassword":"password123"}'`
+2. Sign in at `/api/auth/signin` with those credentials and confirm the redirect to `/dashboard`
+3. Confirm GitHub OAuth still works
+
+Reference: https://authjs.dev/getting-started/authentication/credentials
 
 ## History
 
@@ -156,3 +194,17 @@
 - Committed as `perf: aggregate collection type counts in postgres` on `feature/query-repo-quick-wins`, merged into `main` with `--no-ff`, and the branch deleted. It was never pushed, so there was no remote branch to clean up
 - `.claude/` is still untracked and was deliberately left out of the commit: it holds the local skill and agent definitions, is unrelated to this feature, and whether it belongs in the repository is a separate call
 - Still open, unchanged by this feature: `/items/[slug]`, `/collections` and `/collections/[id]` all 404, and the Vercel Production/Preview environment variables may still hold the pre-rotation Neon credentials
+- Loaded `context/features/auth-phase-1-spec.md` and set the current feature to Auth Phase 1 — NextAuth v5 with the Prisma adapter and GitHub OAuth, protecting `/dashboard/*` through `src/proxy.ts`
+- Installed `next-auth@5.0.0-beta.32` (the `@beta` tag — `@latest` still resolves to v4) and `@auth/prisma-adapter@2.11.3`
+- Built the split config the edge runtime requires: `src/auth.config.ts` exports providers only (`GitHub`, which reads `AUTH_GITHUB_ID`/`AUTH_GITHUB_SECRET` from the environment itself), and `src/auth.ts` adds the Prisma adapter plus `session: { strategy: "jwt" }`. `src/proxy.ts` initializes its own NextAuth instance from the config half alone, which is the point of the split — it can read the session cookie without pulling Prisma into the proxy bundle
+- The adapter still persists users, accounts and verification tokens; the `jwt` strategy only moves the *session* out of the `Session` table and into a cookie, which is what keeps the proxy free of database access
+- `src/types/next-auth.d.ts` extends `Session["user"]` with `id`, intersected with `DefaultSession["user"]` so redeclaring `user` does not drop `name`/`email`/`image`. The `session` callback fills it from the token's `sub` claim, because under the `jwt` strategy the callback's `user` argument is undefined
+- Next.js 16 renamed the `middleware` file convention to `proxy`, so the file is `src/proxy.ts` alongside `app/` and the export must be named `proxy`. Its matcher is scoped to `/dashboard/:path*`, which keeps `/api/auth/*` and the landing page out of the redirect path and makes a loop impossible
+- Anonymous requests redirect to Auth.js's built-in `/api/auth/signin` with a `callbackUrl` pointing back at the requested path; no custom `pages.signIn` in this phase, per the spec
+- Documented `AUTH_SECRET`, `AUTH_GITHUB_ID` and `AUTH_GITHUB_SECRET` in `.env.example`; all three are set in the local `.env`
+- Verified at runtime against the dev server: `/dashboard` returns `307` to `/api/auth/signin?callbackUrl=%2Fdashboard`, `/api/auth/providers` lists the GitHub provider, and the default sign-in page renders "Sign in with GitHub". The interactive OAuth round trip through GitHub itself was not exercised — it needs a real GitHub login
+- `src/lib/db/user.ts` still resolves the seeded `demo@devstash.io` account rather than the session, so a GitHub sign-in creates a `User` row but the dashboard keeps rendering demo data. Reading the session there is deliberately left for a later phase
+- Feature complete — `npx tsc --noEmit`, `npm run lint` and `npm run build` pass; the build reports `ƒ Proxy (Middleware)` and `ƒ /api/auth/[...nextauth]`. Committed as `feat: set up nextauth v5 with github oauth` on `feature/auth-phase-1` and merged into `main` with `--no-ff`
+- The unrelated Neon MCP branch-scoping section that had accumulated in `CLAUDE.md` went in as its own `docs:` commit rather than riding along with the auth work
+- One thing to fix in phase 2 rather than now: `src/auth.ts` spreads `...authConfig` *after* `adapter` and `session`. Harmless today, since the config half only carries `providers`, but phase 2 has to override `providers` and the spread order decides which one wins
+- Loaded `context/features/auth-phase-2-spec.md` and set the current feature to Auth Phase 2 — the Credentials provider and the registration route
