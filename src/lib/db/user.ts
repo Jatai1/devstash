@@ -63,3 +63,56 @@ export const getCurrentUser = cache(async (): Promise<UserSummary> => {
   // one — the adapter, the register route and the seed — sets it.
   return { ...user, email: user.email ?? "" };
 });
+
+/** Everything the profile page renders about the account itself. */
+export interface ProfileSummary extends UserSummary {
+  /** When the account was created. */
+  createdAt: Date;
+  /**
+   * Whether a password is set, which is what separates an email/password
+   * account from a GitHub-only one and decides whether the change-password
+   * form is offered.
+   *
+   * Deliberately a boolean rather than the column: this crosses into a page
+   * that passes parts of it to client components, and the hash has no business
+   * leaving the database layer.
+   */
+  hasPassword: boolean;
+}
+
+/**
+ * The signed-in user's profile, with the two fields only this page needs.
+ *
+ * Kept separate from `getCurrentUser` rather than widening it: that one is
+ * called on every dashboard render by the sidebar footer, and there is no
+ * reason for those queries to carry a password hash around.
+ */
+export const getProfile = cache(async (): Promise<ProfileSummary> => {
+  const { id } = await getCurrentUser();
+
+  const user = await prisma.user.findUnique({
+    where: { id },
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      image: true,
+      createdAt: true,
+      password: true,
+    },
+  });
+
+  // `getCurrentUser` above already resolved this same row, so a miss here means
+  // it was deleted mid-request.
+  if (!user) {
+    throw new Error(`Session refers to user ${id}, which no longer exists.`);
+  }
+
+  const { password, ...profile } = user;
+
+  return {
+    ...profile,
+    email: profile.email ?? "",
+    hasPassword: password !== null,
+  };
+});
