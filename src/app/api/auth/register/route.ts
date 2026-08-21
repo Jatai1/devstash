@@ -1,4 +1,3 @@
-import { hash } from "bcryptjs";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
@@ -6,12 +5,9 @@ import { Prisma } from "@/generated/prisma/client";
 import { registerSchema } from "@/lib/auth-schemas";
 import { isEmailVerificationEnabled } from "@/lib/email-verification";
 import { sendVerificationEmail } from "@/lib/email/send-verification-email";
+import { hashPassword } from "@/lib/password";
 import { prisma } from "@/lib/prisma";
 import { createVerificationToken } from "@/lib/verification-tokens";
-
-// Matches the cost factor `prisma/seed.ts` uses, so the seeded demo account and
-// a freshly registered one are hashed the same way.
-const BCRYPT_ROUNDS = 12;
 
 /**
  * Creates an account from an email and password.
@@ -70,7 +66,7 @@ export async function POST(request: Request) {
       data: {
         name,
         email,
-        password: await hash(password, BCRYPT_ROUNDS),
+        password: await hashPassword(password),
         // Stamped up front when verification is off, rather than leaving it
         // null and relying on the sign-in gate being skipped. Otherwise every
         // account made while the flag was off would be locked out the moment

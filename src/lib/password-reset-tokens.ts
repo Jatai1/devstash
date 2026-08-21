@@ -1,5 +1,4 @@
-import { hash } from "bcryptjs";
-
+import { hashPassword } from "@/lib/password";
 import { prisma } from "@/lib/prisma";
 import {
   claimScopedToken,
@@ -17,9 +16,6 @@ import type { TokenFailure } from "@/lib/tokens";
  * long enough to find the mail and act on it.
  */
 const TOKEN_TTL_MS = 60 * 60 * 1000;
-
-/** Matches the cost the register route hashes at, so the two cannot diverge. */
-const BCRYPT_ROUNDS = 12;
 
 /**
  * Reset rows are namespaced, unlike verification rows which use the bare
@@ -80,7 +76,7 @@ export async function resetPasswordWithToken(
     return precheck;
   }
 
-  const hashed = await hash(newPassword, BCRYPT_ROUNDS);
+  const hashed = await hashPassword(newPassword);
 
   // Claimed rather than trusting the pre-check: the delete is what decides the
   // race between two concurrent submits, and the link can be spent, superseded

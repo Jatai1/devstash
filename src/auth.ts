@@ -1,5 +1,4 @@
 import { PrismaAdapter } from "@auth/prisma-adapter";
-import { compare } from "bcryptjs";
 import NextAuth, { CredentialsSignin } from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 
@@ -7,6 +6,7 @@ import authConfig from "@/auth.config";
 import { EMAIL_NOT_VERIFIED_CODE } from "@/lib/auth-errors";
 import { signInSchema } from "@/lib/auth-schemas";
 import { isEmailVerificationEnabled } from "@/lib/email-verification";
+import { verifyPassword } from "@/lib/password";
 import { prisma } from "@/lib/prisma";
 
 /**
@@ -64,7 +64,7 @@ const credentials = Credentials({
       return null;
     }
 
-    if (!(await compare(password, user.password))) {
+    if (!(await verifyPassword(password, user.password))) {
       return null;
     }
 
