@@ -1,16 +1,30 @@
-# Current Feature
+# Current Feature: Profile Page
 
 ## Status
 
-Not Started
+In Progress
 
 ## Goals
 
-<!-- Bullet points of what success looks like -->
+- `/profile` shows the signed-in user's info: avatar, name, email and the date the account was created
+- The avatar uses the GitHub image from OAuth when there is one, and falls back to initials derived from the name or email
+- The page shows usage stats: total items, total collections, and a per-item-type breakdown covering all seven types
+- Email/password users get a change-password form that verifies the current password and sets the new one in place, plus a link into the emailed reset flow for anyone who has forgotten it; GitHub-only users (no `User.password`) see neither
+- Deleting an account is possible from the page and is gated behind a confirmation dialog
+- The route stays protected — an anonymous request is redirected to sign-in, not shown the page
+- Data fetching and components follow the existing patterns: query functions in `src/lib/db/`, Server Actions for mutations, shadcn components
 
 ## Notes
 
-<!-- Additional context, constraints, or details from the spec -->
+Source spec: `context/features/profile-spec.md`.
+
+- `/profile` already exists at `src/app/profile/page.tsx` as a read-only card (avatar, display name, email, a link back to the dashboard), so this feature extends that page rather than creating the route from scratch. `src/proxy.ts` already matches `/profile/:path*`, so the protection requirement is met and only needs verifying.
+- `UserAvatar` already implements the image-or-initials fallback; the spec's avatar requirement is largely satisfied and should be confirmed rather than rebuilt.
+- `getCurrentUser()` in `src/lib/db/user.ts` selects only `id`, `name`, `email` and `image`. The creation date and whether a password is set are not in `UserSummary`, so the profile needs either a widened select or its own query — worth deciding rather than widening the shape every sidebar render pays for.
+- Stats have existing queries to reuse: `getItemStats` and `getCollectionStats`, plus `getItemTypes()`, which already returns every type with a per-user item count — that is the type breakdown.
+- Change password is **in place**: the form asks for the current password and sets the new one directly, no email round trip. Alongside it sits a "Forgot your current password?" action linking into the existing forgot-password flow, so a user who cannot supply the current password still has a way through. Both paths therefore end at the same `User.password` column, and the emailed-link flow needs no changes — only a link to it.
+- Account deletion is destructive and cascades. `scripts/prune-users.ts` already worked out the deletion order — `Item.itemType` is a required relation defaulting to `Restrict`, so custom item types cannot be dropped while their items still reference them, and `VerificationToken` has no foreign key to `User` and must be cleaned by email. That script is the reference for what a delete has to cover.
+- Sessions are JWTs with no server-side record, so a deleted account's token stays valid until it expires; the delete flow has to sign the user out rather than assume the session dies with the row.
 
 ## History
 

@@ -73,6 +73,23 @@ export const registerSchema = z
 
 export type RegisterInput = z.infer<typeof registerSchema>;
 
+/**
+ * What the profile's change-password form accepts.
+ *
+ * `currentPassword` is only checked for presence, for the same reason
+ * `signInSchema` is loose: it was accepted under whatever rules applied when the
+ * account was created, so validating it against today's rules would reject a
+ * password that is in fact correct. The new one goes through `newPassword()`,
+ * so this cannot install a password registration would have refused.
+ */
+export const changePasswordSchema = z
+  .object({
+    currentPassword: z.string().min(1, "Enter your current password"),
+    password: newPassword(),
+    confirmPassword: z.string(),
+  })
+  .refine(passwordsMatch, MISMATCH);
+
 /** What the "email me a reset link" form accepts. */
 export const forgotPasswordSchema = z.object({
   email: z.email("Enter a valid email address").toLowerCase(),
