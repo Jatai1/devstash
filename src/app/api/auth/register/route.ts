@@ -4,6 +4,7 @@ import { z } from "zod";
 
 import { Prisma } from "@/generated/prisma/client";
 import { registerSchema } from "@/lib/auth-schemas";
+import { isEmailVerificationEnabled } from "@/lib/email-verification";
 import { sendVerificationEmail } from "@/lib/email/send-verification-email";
 import { prisma } from "@/lib/prisma";
 import { createVerificationToken } from "@/lib/verification-tokens";
@@ -62,33 +63,50 @@ export async function POST(request: Request) {
     );
   }
 
+  const verificationRequired = isEmailVerificationEnabled();
+
   try {
     const user = await prisma.user.create({
-      data: { name, email, password: await hash(password, BCRYPT_ROUNDS) },
+      data: {
+        name,
+        email,
+        password: await hash(password, BCRYPT_ROUNDS),
+        // Stamped up front when verification is off, rather than leaving it
+        // null and relying on the sign-in gate being skipped. Otherwise every
+        // account made while the flag was off would be locked out the moment
+        // it was turned back on, and unpicking that would need another
+        // backfill like `scripts/backfill-email-verified.ts`.
+        emailVerified: verificationRequired ? null : new Date(),
+      },
       select: { id: true, name: true, email: true },
     });
 
-    // The account exists but cannot sign in until this link is clicked, so a
-    // failed send leaves a real dead end. Report it as a 502 with the account
-    // still in place: the address is now taken, so retrying registration would
-    // only 409, and the way out is to request a fresh link.
-    try {
-      const token = await createVerificationToken(email);
+    if (verificationRequired) {
+      // The account exists but cannot sign in until this link is clicked, so a
+      // failed send leaves a real dead end. Report it as a 502 with the account
+      // still in place: the address is now taken, so retrying registration would
+      // only 409, and the way out is to request a fresh link.
+      try {
+        const token = await createVerificationToken(email);
 
-      await sendVerificationEmail({ to: email, name, token });
-    } catch (sendError) {
-      console.error("Verification email failed to send", sendError);
+        await sendVerificationEmail({ to: email, name, token });
+      } catch (sendError) {
+        console.error("Verification email failed to send", sendError);
 
-      return NextResponse.json(
-        {
-          error:
-            "Your account was created, but the verification email could not be sent. Request a new link to finish signing up.",
-        },
-        { status: 502 },
-      );
+        return NextResponse.json(
+          {
+            error:
+              "Your account was created, but the verification email could not be sent. Request a new link to finish signing up.",
+          },
+          { status: 502 },
+        );
+      }
     }
 
-    return NextResponse.json({ user }, { status: 201 });
+    // The client cannot read a server-only variable, so the decision travels
+    // with the response. That also keeps this route the single authority on
+    // whether a link was sent, rather than the form re-deriving the rule.
+    return NextResponse.json({ user, verificationRequired }, { status: 201 });
   } catch (error) {
     // Two requests for the same address can both pass the check above and race
     // to the insert; the unique index on `email` is what actually decides it.

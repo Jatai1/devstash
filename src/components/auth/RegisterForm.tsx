@@ -22,6 +22,12 @@ interface RegisterErrorBody {
   fieldErrors?: FieldErrors;
 }
 
+/** The parts of the `201` body this form acts on. */
+interface RegisterSuccessBody {
+  /** False when the flag is off and no verification link was sent. */
+  verificationRequired?: boolean;
+}
+
 const LABELS: Record<FieldName, string> = {
   name: "Name",
   email: "Email",
@@ -76,10 +82,23 @@ export function RegisterForm() {
       });
 
       if (response.ok) {
+        const body: RegisterSuccessBody = await response
+          .json()
+          .catch(() => ({}));
+
+        // Whether a link was actually sent is the server's call — the flag it
+        // depends on is server-only. Defaulting to true keeps the safer copy if
+        // the body is ever missing or malformed: telling someone to check their
+        // email when none was sent is a smaller failure than sending one and
+        // never mentioning it.
+        const verificationRequired = body.verificationRequired ?? true;
+
         // `replace` rather than `push`: a completed registration should not be
         // reachable with the back button.
         router.replace(
-          `/check-email?email=${encodeURIComponent(parsed.data.email)}`,
+          verificationRequired
+            ? `/check-email?email=${encodeURIComponent(parsed.data.email)}`
+            : "/sign-in?registered=1",
         );
         return;
       }
