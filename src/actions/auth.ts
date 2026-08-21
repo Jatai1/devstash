@@ -9,6 +9,7 @@ import {
   resolveAuthErrorCode,
 } from "@/lib/auth-errors";
 import { resendVerificationSchema, signInSchema } from "@/lib/auth-schemas";
+import { isEmailVerificationEnabled } from "@/lib/email-verification";
 import { sendVerificationEmail } from "@/lib/email/send-verification-email";
 import { prisma } from "@/lib/prisma";
 import { createVerificationToken } from "@/lib/verification-tokens";
@@ -144,6 +145,14 @@ export async function resendVerificationEmail(
 
   if (!parsed.success) {
     return { error: "Enter a valid email address." };
+  }
+
+  // With verification off there is nothing to verify, so no mail is sent. The
+  // reply is the same acknowledgement as every other outcome: a distinct
+  // "verification is disabled" message would leak the flag's state to anyone
+  // who asked, and there is nothing here for the user to act on either way.
+  if (!isEmailVerificationEnabled()) {
+    return { message: RESEND_ACKNOWLEDGEMENT };
   }
 
   const { email } = parsed.data;

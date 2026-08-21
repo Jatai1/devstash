@@ -6,6 +6,7 @@ import Credentials from "next-auth/providers/credentials";
 import authConfig from "@/auth.config";
 import { EMAIL_NOT_VERIFIED_CODE } from "@/lib/auth-errors";
 import { signInSchema } from "@/lib/auth-schemas";
+import { isEmailVerificationEnabled } from "@/lib/email-verification";
 import { prisma } from "@/lib/prisma";
 
 /**
@@ -69,7 +70,12 @@ const credentials = Credentials({
 
     // Checked only after the password matches, so an unverified-account
     // response cannot be used to probe which addresses are registered.
-    if (!user.emailVerified) {
+    //
+    // The flag has to be honoured here as well as at registration: accounts
+    // that were already sitting at `emailVerified: null` before it was turned
+    // off would otherwise stay locked out, and "verification disabled" that
+    // only applies to new accounts is not really disabled.
+    if (isEmailVerificationEnabled() && !user.emailVerified) {
       throw new EmailNotVerifiedError();
     }
 

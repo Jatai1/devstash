@@ -15,6 +15,7 @@ import {
   getAuthErrorMessage,
   resolveAuthErrorCode,
 } from "@/lib/auth-errors";
+import { isEmailVerificationEnabled } from "@/lib/email-verification";
 
 export const metadata: Metadata = {
   title: "Sign in · Devstash",
@@ -23,13 +24,15 @@ export const metadata: Metadata = {
 export default async function SignInPage({
   searchParams,
 }: PageProps<"/sign-in">) {
-  const { callbackUrl, error, code, verified, unverified } = await searchParams;
+  const { callbackUrl, error, code, verified, unverified, registered } =
+    await searchParams;
 
   const failureCode = resolveAuthErrorCode(
     typeof error === "string" ? error : undefined,
     typeof code === "string" ? code : undefined,
   );
   const isUnverified = failureCode === EMAIL_NOT_VERIFIED_CODE;
+  const verificationEnabled = isEmailVerificationEnabled();
 
   return (
     <Card>
@@ -44,11 +47,18 @@ export default async function SignInPage({
         <SignInForm
           // Passed in rather than rendered here so the form can drop it once a
           // sign-in attempt produces an error, instead of leaving a stale
-          // notice sitting above the error. Set by /verify-email once a token
-          // is consumed; registration has its own page and no longer lands
-          // here.
+          // notice sitting above the error.
+          //
+          // `verified` is set by /verify-email once a token is consumed.
+          // `registered` only arrives when email verification is switched off:
+          // with it on, registration goes to /check-email instead, so "ready to
+          // sign in" is only ever shown when it is actually true.
           notice={
-            verified ? "Your email is verified. Sign in to continue." : undefined
+            verified
+              ? "Your email is verified. Sign in to continue."
+              : registered
+                ? "Your account is ready. Sign in to continue."
+                : undefined
           }
           callbackUrl={typeof callbackUrl === "string" ? callbackUrl : "/dashboard"}
           // Auth.js redirects its own failures here as `?error=<code>`; this is
@@ -60,7 +70,15 @@ export default async function SignInPage({
           }
           // Arrivals from an expired or already-used link get the resend form
           // straight away, without having to fail a sign-in first.
-          initialEmailNotVerified={Boolean(unverified) || isUnverified}
+          //
+          // Gated on the flag because `?unverified=1` is a plain URL — reachable
+          // from an old link, or by hand — where `EmailNotVerified` can only be
+          // produced by the gate. Without this the form would still be offered
+          // with verification switched off, promising a link that the resend
+          // action would then decline to send.
+          initialEmailNotVerified={
+            verificationEnabled && (Boolean(unverified) || isUnverified)
+          }
         />
       </CardContent>
 
