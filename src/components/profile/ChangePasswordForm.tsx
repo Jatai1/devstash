@@ -111,8 +111,16 @@ export function ChangePasswordForm() {
         );
       })}
 
-      <div className="flex flex-wrap items-center gap-4">
+      <div className="flex flex-wrap items-center gap-3">
         <SubmitButton />
+
+        {/* Leaving without saving. The submit comes first here because nothing
+            on this form is destructive — the delete form reverses the order,
+            where the safe choice deserves the first position. */}
+        <Button asChild variant="outline">
+          <Link href="/profile">Cancel</Link>
+        </Button>
+
         {/* The way through for someone who cannot supply the current password.
             It proves control of the mailbox instead, which is the same evidence
             every other reset relies on. */}
