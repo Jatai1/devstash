@@ -1,16 +1,143 @@
-# Current Feature
+# Current Feature: Forgot Password
 
 ## Status
 
-Not Started
+In Progress
 
 ## Goals
 
-<!-- Bullet points of what success looks like -->
+- A "Forgot password?" link on the sign-in page leads to a `/forgot-password`
+  page where a user enters their email address and requests a reset link.
+- Requesting a reset issues a single-use, time-limited token stored in the
+  existing `VerificationToken` model and emails the user a link to
+  `/reset-password?token=…` through the existing Resend client.
+- The reset page validates the token before showing the form, and rejects an
+  invalid, expired, already-used or superseded token with a clear message and a
+  way to request a new link.
+- Submitting a new password hashes it with bcryptjs (12 rounds, matching
+  registration), writes it to `User.password`, consumes the token so the link
+  cannot be replayed, and sends the user to sign in.
+- The request form answers identically whether or not the address is
+  registered, so it cannot be used to enumerate accounts.
+- A reset token and an email-verification token for the same address coexist —
+  issuing one must not invalidate the other, and neither link may be redeemed
+  by the other flow's route.
+- `npx tsc --noEmit`, `npm run lint` and `npm run build` pass, and the flow is
+  verified end to end against the running app.
 
 ## Notes
 
-<!-- Additional context, constraints, or details from the spec -->
+**Reuse `VerificationToken`** as requested — no migration. The model is
+`identifier` / `token @unique` / `expires`, with `@@unique([identifier, token])`.
+Storing a hash in `token` already satisfies the unique constraint, as the email
+verification feature established.
+
+The central constraint is that this table is already in use by email
+verification, and the existing helpers in `src/lib/verification-tokens.ts`
+assume they own it:
+
+- `createVerificationToken(email)` deletes **every** row for that
+  `identifier` before inserting. Reusing it as-is means requesting a password
+  reset silently kills a pending verification link and vice versa.
+- `consumeVerificationToken()` stamps `User.emailVerified` on success. A reset
+  token redeemed at `/verify-email` would verify the address; a verification
+  token redeemed at `/reset-password` would let someone set a password from a
+  link that was never meant to grant that.
+
+Namespacing the `identifier` (a prefix such as `password-reset:<email>`) keeps
+the two flows in one table without either of those collisions, and lets the
+scoped delete-then-insert still mean "only the newest reset link works". The
+alternatives — a separate model, or a purpose column — both need a migration.
+
+Follow the token handling the verification feature already settled on: 32
+random bytes, base64url in the URL, SHA-256 unsalted in the database (the input
+is already random, so there is nothing for a salt to protect), and let the
+`deleteMany` count decide the race, since mail clients and security scanners
+prefetch links.
+
+Other things this has to fit:
+
+- Reuse `src/lib/email/client.ts` (`getResend`, `EMAIL_FROM`, `getBaseUrl`) and
+  model the mail on `send-verification-email.ts`.
+- Schemas go in `src/lib/auth-schemas.ts` alongside `signInSchema` /
+  `registerSchema`; reuse the registration password rules, including the
+  72-**byte** cap, since bcrypt truncates past that.
+- Server Actions in `src/actions/auth.ts` per the coding standards — the
+  registration API route exists because it is a public endpoint, which this is
+  not.
+- Pages belong in the `src/app/(auth)/` group with the existing sign-in,
+  register, check-email and verify-email pages.
+- A GitHub-only account has no `User.password`. Decide deliberately whether a
+  reset creates one (which would let a password bypass the OAuth link) or is
+  refused — and keep the answer invisible to the request form, which must stay
+  non-enumerating either way.
+- Consuming a reset token should invalidate live sessions if that is cheap, but
+  the JWT session strategy means a token stays valid until it expires; note the
+  limitation rather than pretending otherwise.
+
+Open questions, settled at `start`:
+
+- **OAuth-only accounts get the link and gain a password** (the user's call).
+  Following a link sent to the mailbox is the same evidence a reset relies on
+  for everyone else, and refusing would strand a GitHub user who has lost their
+  GitHub account. The OAuth sign-in keeps working alongside the new password.
+  This deliberately differs from `resendVerificationEmail`, which skips
+  password-less accounts.
+- **A successful reset stamps `emailVerified`, but only when it is null**, so an
+  account that verified months ago keeps its original date rather than having it
+  rewritten by an unrelated password change.
+- Rate limiting stays deferred, so this is now a fourth unmetered route that
+  triggers outbound mail on demand.
+- `EMAIL_FROM` still has no verified Resend domain, so reset mail only reaches
+  the Resend account owner and `*@resend.dev` inboxes.
+
+Decisions taken while building:
+
+- The shared token mechanics were extracted into `src/lib/tokens.ts` rather than
+  duplicated. Both flows need the same delete-decides-the-race handling, which
+  had already been got wrong once and fixed once, and two copies would have been
+  free to drift apart again.
+- Namespacing is enforced on *read* as well as write: a token from the wrong
+  namespace is rejected **without being deleted**, so a probe at one endpoint
+  cannot burn the other flow's live link.
+- The reset page peeks at the token without consuming it, so a dead link says so
+  before the user types a password twice; the action re-checks and spends it,
+  because the link can expire or be superseded in between.
+- Reset tokens live 1 hour against verification's 24 — this one changes a
+  credential rather than confirming an address.
+- Unlike the resend form, a *send failure* here is reported as success and only
+  logged. That form is reachable only after the caller proved the address exists
+  by getting its password right; this one proves nothing, so an error that
+  appears only for real accounts would be an enumeration oracle.
+
+Found at `review` and fixed:
+
+- `resetPasswordWithToken` hashed the new password *before* validating the
+  token, so anyone could force a 12-round bcrypt run (~300 ms of CPU) by posting
+  a random string to an unauthenticated endpoint. Now a cheap peek rejects a bad
+  link first, the hash runs second, and the claim happens third — which keeps
+  the original reason for hashing early, namely that the gap between spending
+  the link and writing the password stays one statement. Measured: a garbage
+  token now returns in 49 ms.
+- The password write and the `emailVerified` stamp were two separate statements.
+  A failure between them would change the password without the stamp, which with
+  verification enabled leaves an account that cannot sign in. They are now one
+  `$transaction`.
+
+Found at `review` and **not** fixed, stated rather than papered over:
+
+- The request form is text-identical for a known and an unknown address, but not
+  *timing*-identical: a real account costs a token insert and a Resend round
+  trip, an unknown one returns immediately. That difference is measurable, so
+  the endpoint resists casual enumeration rather than a determined attempt.
+  Closing it means sending out of band, which needs a queue or a background task
+  that survives the response — more than this feature should introduce, and
+  related to the rate limiting already deferred.
+- Rewriting `src/lib/verification-tokens.ts` onto the shared core is strictly
+  beyond "add a reset flow". It is kept because the goal that the two flows must
+  not redeem each other's links cannot be met without shared namespace logic,
+  and duplicating the race handling is what the original bug came from. Its
+  observable behaviour is unchanged and was re-tested.
 
 ## History
 

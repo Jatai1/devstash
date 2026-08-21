@@ -34,22 +34,60 @@ export const resendVerificationSchema = z.object({
   email: z.email().toLowerCase(),
 });
 
+/**
+ * The rules a *new* password has to satisfy.
+ *
+ * Shared by registration and password reset rather than written twice: the two
+ * set the same column, so a rule that applied to only one of them would let a
+ * reset install a password that registration would have refused.
+ */
+const newPassword = () =>
+  z
+    .string()
+    .min(8, "Password must be at least 8 characters")
+    .refine(
+      isWithinBcryptLimit,
+      `Password must be at most ${PASSWORD_MAX_BYTES} bytes`,
+    );
+
+/** Shared by both forms that ask for a password twice. */
+const passwordsMatch = (values: {
+  password: string;
+  confirmPassword: string;
+}) => values.password === values.confirmPassword;
+
+// Not `as const`: Zod wants a mutable `path`, so freezing it here is rejected.
+const MISMATCH = {
+  message: "Passwords do not match",
+  path: ["confirmPassword"],
+};
+
 export const registerSchema = z
   .object({
     name: z.string().trim().min(1, "Name is required").max(100),
     email: z.email("Enter a valid email address").toLowerCase(),
-    password: z
-      .string()
-      .min(8, "Password must be at least 8 characters")
-      .refine(
-        isWithinBcryptLimit,
-        `Password must be at most ${PASSWORD_MAX_BYTES} bytes`,
-      ),
+    password: newPassword(),
     confirmPassword: z.string(),
   })
-  .refine((values) => values.password === values.confirmPassword, {
-    message: "Passwords do not match",
-    path: ["confirmPassword"],
-  });
+  .refine(passwordsMatch, MISMATCH);
 
 export type RegisterInput = z.infer<typeof registerSchema>;
+
+/** What the "email me a reset link" form accepts. */
+export const forgotPasswordSchema = z.object({
+  email: z.email("Enter a valid email address").toLowerCase(),
+});
+
+/**
+ * What the reset form accepts.
+ *
+ * The token rides along in a hidden field rather than being read from the URL
+ * server-side, so the action validates exactly what was submitted.
+ */
+export const resetPasswordSchema = z
+  .object({
+    token: z.string().min(1),
+    password: newPassword(),
+    confirmPassword: z.string(),
+  })
+  .refine(passwordsMatch, MISMATCH);

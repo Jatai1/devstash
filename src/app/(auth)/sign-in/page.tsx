@@ -24,7 +24,7 @@ export const metadata: Metadata = {
 export default async function SignInPage({
   searchParams,
 }: PageProps<"/sign-in">) {
-  const { callbackUrl, error, code, verified, unverified, registered } =
+  const { callbackUrl, error, code, verified, unverified, registered, reset } =
     await searchParams;
 
   const failureCode = resolveAuthErrorCode(
@@ -50,15 +50,19 @@ export default async function SignInPage({
           // notice sitting above the error.
           //
           // `verified` is set by /verify-email once a token is consumed.
-          // `registered` only arrives when email verification is switched off:
-          // with it on, registration goes to /check-email instead, so "ready to
-          // sign in" is only ever shown when it is actually true.
+          // `reset` is set by the reset-password action once a new password is
+          // written. `registered` only arrives when email verification is
+          // switched off: with it on, registration goes to /check-email
+          // instead, so "ready to sign in" is only ever shown when it is
+          // actually true.
           notice={
-            verified
-              ? "Your email is verified. Sign in to continue."
-              : registered
-                ? "Your account is ready. Sign in to continue."
-                : undefined
+            reset
+              ? "Your password has been changed. Sign in with it to continue."
+              : verified
+                ? "Your email is verified. Sign in to continue."
+                : registered
+                  ? "Your account is ready. Sign in to continue."
+                  : undefined
           }
           callbackUrl={typeof callbackUrl === "string" ? callbackUrl : "/dashboard"}
           // Auth.js redirects its own failures here as `?error=<code>`; this is
