@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useActionState, useState } from "react";
 import { useFormStatus } from "react-dom";
 
@@ -94,7 +95,21 @@ export function SignInForm({
         </div>
 
         <div className="grid gap-2">
-          <Label htmlFor="password">Password</Label>
+          <div className="flex items-center justify-between">
+            <Label htmlFor="password">Password</Label>
+            {/* Carries whatever address has been typed so far, so the reset
+                form opens prefilled rather than asking for it again. */}
+            <Link
+              href={
+                email
+                  ? `/forgot-password?email=${encodeURIComponent(email)}`
+                  : "/forgot-password"
+              }
+              className="text-xs text-muted-foreground underline underline-offset-4 hover:text-foreground"
+            >
+              Forgot password?
+            </Link>
+          </div>
           <Input
             id="password"
             name="password"
