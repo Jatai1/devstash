@@ -46,3 +46,9 @@ next-env.d.ts
 
 # playwright mcp scratch output (snapshots, console logs, screenshots)
 .playwright-mcp/
+
+# MCP server config — holds a live context7 Authorization token
+.mcp.json
+
+# per-machine Claude Code permissions, not shared
+.claude/settings.local.json
