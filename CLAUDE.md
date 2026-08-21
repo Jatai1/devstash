@@ -98,6 +98,50 @@ Both `params` and `searchParams` are **Promises** and must be awaited. The route
 only contains routes that exist, so referencing a route you haven't created yet is a
 type error, and the types are stale until `next dev` or `next build` regenerates them.
 
+### Auth is split in two because the proxy runs at the edge
+
+Authentication is NextAuth v5 (Auth.js) with a Credentials provider and GitHub OAuth,
+the Prisma adapter, and `session: { strategy: "jwt" }`. It is deliberately split across
+two files and **the split must be preserved**:
+
+- `src/auth.config.ts` — the edge-safe half: `pages`, and a `providers` array whose
+  `Credentials` entry is a placeholder returning `null`. No Prisma, no bcrypt.
+- `src/auth.ts` — adds the Prisma adapter and the real `authorize`, and swaps the
+  placeholder by matching on `provider.id`. Only server code that already talks to the
+  database should import this.
+
+`src/proxy.ts` initializes its **own** NextAuth instance from `auth.config.ts` alone, so
+it can read the session cookie without pulling Prisma or bcrypt into the edge bundle.
+Importing `@/auth` there would break the build. Next.js 16 renamed the `middleware` file
+convention to `proxy`, and the export has to be named `proxy` to match. Its matcher
+(`/dashboard/:path*`, `/profile/:path*`) is what makes those routes private — a new
+private route needs adding there.
+
+**A Server Action is a public endpoint.** Being rendered behind the proxy is not
+authorization: every action re-derives the user from `auth()` itself and never takes an
+id or email from `FormData`. See `src/actions/profile.ts`.
+
+Routes are grouped: `src/app/(auth)/` is the signed-out shell (sign-in, register,
+verify-email, forgot/reset password), `src/app/(app)/` is the signed-in shell that owns
+the sidebar layout. Neither group segment appears in the URL.
+
+Email verification and password reset share the `VerificationToken` table through
+`src/lib/tokens.ts`, which namespaces reset rows as `password-reset:<email>` and leaves
+verification rows bare. Tokens are 32 random bytes — raw in the link, SHA-256 in the
+database — and a token from one namespace must never be redeemable by the other flow.
+Password hashing goes through `src/lib/password.ts` and nowhere else, so the bcrypt cost
+factor cannot drift between registration, reset and the profile change.
+
+Auth environment variables: `AUTH_SECRET`, `AUTH_GITHUB_ID`, `AUTH_GITHUB_SECRET` (all
+read by Auth.js by name), `AUTH_URL` for absolute links in outgoing mail, plus
+`RESEND_API_KEY`, `EMAIL_FROM` and `EMAIL_VERIFICATION_ENABLED`. `.env.example`
+documents each one. `EMAIL_VERIFICATION_ENABLED` is deliberately **not** `NEXT_PUBLIC_`
+and fails closed — only an explicit `false`/`0`/`off`/`no` disables verification. Next
+reads `.env` at boot, so changing it needs a dev server restart.
+
+The `auth-auditor` agent (`.claude/agents/auth-auditor.md`) does a security review of all
+of this and writes to `docs/audit-results/AUTH_SECURITY_REVIEW.md`.
+
 ### Tailwind v4 has no JS config file
 
 Tailwind is wired in through `@tailwindcss/postcss` in `postcss.config.mjs`. There is no
