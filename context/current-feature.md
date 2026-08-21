@@ -1,30 +1,16 @@
-# Current Feature: Profile Page
+# Current Feature
 
 ## Status
 
-In Progress
+Not Started
 
 ## Goals
 
-- `/profile` shows the signed-in user's info: avatar, name, email and the date the account was created
-- The avatar uses the GitHub image from OAuth when there is one, and falls back to initials derived from the name or email
-- The page shows usage stats: total items, total collections, and a per-item-type breakdown covering all seven types
-- Email/password users get a change-password form that verifies the current password and sets the new one in place, plus a link into the emailed reset flow for anyone who has forgotten it; GitHub-only users (no `User.password`) see neither
-- Deleting an account is possible from the page and is gated behind a confirmation dialog
-- The route stays protected — an anonymous request is redirected to sign-in, not shown the page
-- Data fetching and components follow the existing patterns: query functions in `src/lib/db/`, Server Actions for mutations, shadcn components
+<!-- Bullet points of what success looks like -->
 
 ## Notes
 
-Source spec: `context/features/profile-spec.md`.
-
-- `/profile` already exists at `src/app/profile/page.tsx` as a read-only card (avatar, display name, email, a link back to the dashboard), so this feature extends that page rather than creating the route from scratch. `src/proxy.ts` already matches `/profile/:path*`, so the protection requirement is met and only needs verifying.
-- `UserAvatar` already implements the image-or-initials fallback; the spec's avatar requirement is largely satisfied and should be confirmed rather than rebuilt.
-- `getCurrentUser()` in `src/lib/db/user.ts` selects only `id`, `name`, `email` and `image`. The creation date and whether a password is set are not in `UserSummary`, so the profile needs either a widened select or its own query — worth deciding rather than widening the shape every sidebar render pays for.
-- Stats have existing queries to reuse: `getItemStats` and `getCollectionStats`, plus `getItemTypes()`, which already returns every type with a per-user item count — that is the type breakdown.
-- Change password is **in place**: the form asks for the current password and sets the new one directly, no email round trip. Alongside it sits a "Forgot your current password?" action linking into the existing forgot-password flow, so a user who cannot supply the current password still has a way through. Both paths therefore end at the same `User.password` column, and the emailed-link flow needs no changes — only a link to it.
-- Account deletion is destructive and cascades. `scripts/prune-users.ts` already worked out the deletion order — `Item.itemType` is a required relation defaulting to `Restrict`, so custom item types cannot be dropped while their items still reference them, and `VerificationToken` has no foreign key to `User` and must be cleaned by email. That script is the reference for what a delete has to cover.
-- Sessions are JWTs with no server-side record, so a deleted account's token stays valid until it expires; the delete flow has to sign the user out rather than assume the session dies with the row.
+<!-- Additional context, constraints, or details from the spec -->
 
 ## History
 
@@ -273,3 +259,22 @@ Source spec: `context/features/profile-spec.md`.
 - Two throwaway probe accounts were removed from the development branch by explicit approval after showing what they owned (nothing). A third, `final-probe@resend.dev`, is still there — it was created for the post-fix browser re-test, owns nothing, and was left because approval for the first two did not carry forward
 - Noticed while working, unrelated to this feature and not acted on: the development branch has **lost its seed data** — `demo@devstash.io` and `jasonluu11@hotmail.com` are gone, leaving only `jason@test.com`, so a signed-in dashboard renders every empty state until `npx prisma db seed` is run. And a `.env.production` now exists that earlier history says did not: it is a copy of `.env` pointing at the **development** branch and missing `EMAIL_VERIFICATION_ENABLED`, which matters because Next loads it during `npm run build` and `npm run start`, so a local production build talks to the development database
 - Still open: everything carried in from the previous features, plus rate limiting now covering a fourth unmetered mail-triggering route, and expired reset tokens joining verification tokens in never being swept and not cascading when a user is deleted
+- Loaded `context/features/profile-spec.md` and set the current feature to the profile page — user info, usage stats, change password and delete account. Loading it established that `/profile` already existed as a read-only card and that `src/proxy.ts` already matched `/profile/:path*`, so two of the spec's requirements were extensions and verifications rather than new work
+- One question was put to the user rather than guessed, since the spec only said "change password": the answer was **in place** — ask for the current password and set the new one directly — with a link into the existing emailed reset flow for anyone who has forgotten it. Both paths end at the same `User.password` column, so the reset flow needed no changes, only a link
+- Built on branch `feature/profile-page`. Added the shadcn `alert-dialog` component; like the phase 3 additions it passed lint unmodified. **No migration was needed** — `User.createdAt` and `User.password` already existed
+- `getProfile()` is a **separate query** from `getCurrentUser()` rather than a widened one: that one runs on every dashboard render for the sidebar footer, and there is no reason those queries should carry a password hash around. It maps the column to a `hasPassword` boolean so the hash never leaves the data layer, and that single boolean decides both the sign-in-method label and whether the change-password card renders, so the two cannot disagree
+- The cost of that choice is one extra query on this page, since `getCurrentUser` already resolved the same row. Accepted deliberately over making every sidebar render pay for fields only this page needs
+- Stats reuse `getItemStats`, `getCollectionStats` and `getItemTypes` unchanged, so the profile and the dashboard cannot report different numbers. The breakdown lists every type including unused ones and the user's own custom types — verified with a custom type that appeared alongside the seven system ones
+- Changing a password requires the current one because a session can be an unattended browser or a stolen cookie; re-proving the password is what stops either from locking the real owner out. Naming the wrong field is safe here in a way it is not on the sign-in form, since the caller is already authenticated as that account and the message confirms nothing they did not know
+- The GitHub-only rule is enforced **in the action**, not just by hiding the form. Verified by rendering the form, nulling the password behind the loaded page, and submitting the stale form — the action refused on its own
+- Deletion asks for the email typed back, compared case-insensitively and re-checked server-side. It runs in dependency order in one `$transaction` matching `scripts/prune-users.ts`, then signs the user out, because the JWT naming the deleted row stays valid until it expires. Verified: `/profile` afterwards redirected rather than throwing on the dangling session
+- The submit button in the dialog is a plain `Button`, not `AlertDialogAction` — that one closes the dialog on click, which would unmount the form mid-submit and take any error message with it. Verified: a wrong confirmation keeps the dialog open and shows the error
+- Two changes went beyond the goals deliberately. `src/lib/password.ts` consolidates a `BCRYPT_ROUNDS = 12` that lived in three places with comments manually asserting they matched, rather than adding a fourth. And `tokenIdentifiersFor()` in `tokens.ts` fixed a latent orphan in `prune-users.ts`, which swept tokens by bare address only and so left `password-reset:<email>` rows behind; it reads namespaces off a `Record` keyed by the union, so adding one without listing it fails to compile
+- The review found three issues, all fixed before merge. `revalidatePath("/", "layout")` was cargo-cult — `/dashboard` and `/profile` are `force-dynamic` so nothing was cached to invalidate, and it globally busted the layout cache for every user to no benefit. The destructive transaction had no `try`/`catch`, so a database failure would have hit the error boundary rather than telling the user; `signOut` is deliberately kept outside it, since it signals success by throwing a redirect. And the form-reset effect depended on `state.message`, the same string on every success, so React compared it equal and skipped the reset — a **second** password change in one page load left three filled password boxes on screen. Fixed with a `succeededAt` timestamp
+- That third bug was only reachable by performing the action twice, which the original round of testing never did — worth repeating on any form that resets itself
+- Verified against the live database and the running app: anonymous `/profile` 307s to `/sign-in`; the demo account shows 18 items / 5 collections with a breakdown of 4/3/5/0/0/0/6 summing to 18; a wrong current password marks only that field while a short and mismatched pair mark exactly those two; the changed password signs in and the old one is rejected; two consecutive changes both clear the form; and a full delete removed the account's custom item type despite an item referencing it, both token namespaces, and all link rows while the 7 system types and the demo account's 18 items survived
+- The delete path was re-tested end to end **after** the review fixes, since the version that passed the first test was no longer the version being shipped
+- Neither flow invalidates sessions elsewhere, unchanged from the reset flow: under `session: { strategy: "jwt" }` there is no server-side record to delete
+- Feature complete — `npx tsc --noEmit`, `npm run lint`, `npm run build` and `npm run test:db` all pass; the build still lists `/profile` as `ƒ`. The proxy bundle was re-checked after touching `src/auth.ts` and traces to three chunks totalling ~420 KB with zero references to `bcryptjs`, `PrismaClient`, `generated/prisma`, `pg-pool`, `resend` or the new password helper. Merged into `main` with `--no-ff` across three commits
+- The development branch had **lost its seed data** as the previous feature predicted, so `npx prisma db seed` was run to restore it before verification. Both throwaway probe accounts created for the delete tests were removed by explicit approval, leaving three users — `demo@devstash.io`, `jason@test.com` and `final-probe@resend.dev` — with demo's password restored to the seeded `12345678`
+- Still open, unchanged by this feature: `/items/[slug]`, `/collections` and `/collections/[id]` all 404, and the profile's type breakdown now links to the first of those; `/profile` still has no way to edit a name or avatar, only to change a password or delete the account; rate limiting is still deferred across all four mail-triggering routes; expired tokens are still never swept; and the Vercel Production/Preview environment variables have still never been checked
