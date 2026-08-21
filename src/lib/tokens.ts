@@ -24,6 +24,15 @@ const SEPARATOR = ":";
 export type TokenNamespace = "password-reset";
 
 /**
+ * Every namespace, as a `Record` keyed by the union rather than a plain array.
+ *
+ * Anything sweeping an address's tokens has to cover all of them or it leaves
+ * orphans, and a missing entry in an array would be silent. Keyed this way,
+ * adding a member to `TokenNamespace` without listing it here fails to compile.
+ */
+const NAMESPACES: Record<TokenNamespace, true> = { "password-reset": true };
+
+/**
  * What goes in the URL is the raw token; what goes in the database is its
  * SHA-256 hash.
  *
@@ -64,6 +73,21 @@ function unscope(
   const prefix = `${namespace}${SEPARATOR}`;
 
   return identifier.startsWith(prefix) ? identifier.slice(prefix.length) : null;
+}
+
+/**
+ * Every identifier an address can have tokens stored under, across all
+ * namespaces.
+ *
+ * `VerificationToken` has no foreign key to `User` — it keys on the address —
+ * so nothing cascades when an account is deleted. Anything removing a user has
+ * to clean these up itself, and matching on the bare email alone would miss the
+ * namespaced rows.
+ */
+export function tokenIdentifiersFor(email: string): string[] {
+  const namespaces = Object.keys(NAMESPACES) as TokenNamespace[];
+
+  return [email, ...namespaces.map((namespace) => scope(namespace, email))];
 }
 
 /**

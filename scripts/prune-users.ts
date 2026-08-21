@@ -1,6 +1,7 @@
 import "dotenv/config";
 
 import { prisma } from "../src/lib/prisma";
+import { tokenIdentifiersFor } from "../src/lib/tokens";
 
 /**
  * Deletes every user and everything they own, except one account to keep.
@@ -48,7 +49,8 @@ function describeTarget(): string {
 
 interface Plan {
   users: { id: string; email: string | null; name: string | null }[];
-  emails: string[];
+  /** Every `VerificationToken.identifier` belonging to the doomed accounts. */
+  tokenIdentifiers: string[];
   counts: Record<string, number>;
 }
 
@@ -74,12 +76,16 @@ async function buildPlan(keepEmail: string): Promise<Plan> {
   });
 
   const userIds = users.map((user) => user.id);
-  const emails = users
+
+  // Every namespace, not just the bare address: a pending password-reset row is
+  // stored under `password-reset:<email>` and would otherwise be left orphaned.
+  const tokenIdentifiers = users
     .map((user) => user.email)
-    .filter((email): email is string => Boolean(email));
+    .filter((email): email is string => Boolean(email))
+    .flatMap(tokenIdentifiersFor);
 
   if (userIds.length === 0) {
-    return { users, emails, counts: {} };
+    return { users, tokenIdentifiers, counts: {} };
   }
 
   const owned = { userId: { in: userIds } };
@@ -92,14 +98,16 @@ async function buildPlan(keepEmail: string): Promise<Plan> {
       prisma.itemType.count({ where: owned }),
       prisma.account.count({ where: owned }),
       prisma.session.count({ where: owned }),
-      emails.length
-        ? prisma.verificationToken.count({ where: { identifier: { in: emails } } })
+      tokenIdentifiers.length
+        ? prisma.verificationToken.count({
+            where: { identifier: { in: tokenIdentifiers } },
+          })
         : Promise.resolve(0),
     ]);
 
   return {
     users,
-    emails,
+    tokenIdentifiers,
     counts: {
       items,
       collections,
@@ -141,10 +149,10 @@ async function prune(plan: Plan): Promise<void> {
     // VerificationToken has no foreign key to User — it keys on the email
     // address — so nothing removes these when the account goes. Without this
     // they linger as orphans until they expire, and no job sweeps them.
-    ...(plan.emails.length
+    ...(plan.tokenIdentifiers.length
       ? [
           prisma.verificationToken.deleteMany({
-            where: { identifier: { in: plan.emails } },
+            where: { identifier: { in: plan.tokenIdentifiers } },
           }),
         ]
       : []),
