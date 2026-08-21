@@ -15,6 +15,7 @@ import {
   getAuthErrorMessage,
   resolveAuthErrorCode,
 } from "@/lib/auth-errors";
+import { isEmailVerificationEnabled } from "@/lib/email-verification";
 
 export const metadata: Metadata = {
   title: "Sign in · Devstash",
@@ -31,6 +32,7 @@ export default async function SignInPage({
     typeof code === "string" ? code : undefined,
   );
   const isUnverified = failureCode === EMAIL_NOT_VERIFIED_CODE;
+  const verificationEnabled = isEmailVerificationEnabled();
 
   return (
     <Card>
@@ -68,7 +70,15 @@ export default async function SignInPage({
           }
           // Arrivals from an expired or already-used link get the resend form
           // straight away, without having to fail a sign-in first.
-          initialEmailNotVerified={Boolean(unverified) || isUnverified}
+          //
+          // Gated on the flag because `?unverified=1` is a plain URL — reachable
+          // from an old link, or by hand — where `EmailNotVerified` can only be
+          // produced by the gate. Without this the form would still be offered
+          // with verification switched off, promising a link that the resend
+          // action would then decline to send.
+          initialEmailNotVerified={
+            verificationEnabled && (Boolean(unverified) || isUnverified)
+          }
         />
       </CardContent>
 
