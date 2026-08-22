@@ -37,5 +37,5 @@ export const config = {
   // Scoped to the signed-in routes, so `/api/auth/*`, `/sign-in`, `/register`
   // and the public landing page never run through this and cannot
   // redirect-loop.
-  matcher: ["/dashboard/:path*", "/profile/:path*"],
+  matcher: ["/dashboard/:path*", "/items/:path*", "/profile/:path*"],
 };
