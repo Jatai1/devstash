@@ -1,6 +1,6 @@
 import { Pin } from "lucide-react";
 
-import { ItemCard } from "@/components/dashboard/ItemCard";
+import { ItemList } from "@/components/dashboard/ItemList";
 import { getPinnedItems } from "@/lib/db/items";
 import { getCurrentUserId } from "@/lib/db/user";
 
@@ -20,11 +20,7 @@ export async function PinnedItems() {
         Pinned
       </h2>
 
-      <div className="space-y-3">
-        {pinned.map((item) => (
-          <ItemCard key={item.id} item={item} />
-        ))}
-      </div>
+      <ItemList items={pinned} className="space-y-3" />
     </section>
   );
 }

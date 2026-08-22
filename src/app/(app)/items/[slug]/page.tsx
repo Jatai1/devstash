@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 
-import { ItemCard } from "@/components/dashboard/ItemCard";
+import { ItemList } from "@/components/dashboard/ItemList";
 import { TypeIcon } from "@/components/dashboard/TypeIcon";
 import { getItemTypeBySlug } from "@/lib/db/item-types";
 import { getItemsByType } from "@/lib/db/items";
@@ -73,11 +73,7 @@ export default async function ItemsByTypePage({
           Nothing stashed under {type.label} yet.
         </p>
       ) : (
-        <div className="grid gap-4 md:grid-cols-2">
-          {items.map((item) => (
-            <ItemCard key={item.id} item={item} />
-          ))}
-        </div>
+        <ItemList items={items} className="grid gap-4 md:grid-cols-2" />
       )}
     </div>
   );
