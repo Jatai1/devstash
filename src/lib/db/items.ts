@@ -163,6 +163,126 @@ export async function getItem(
   };
 }
 
+/** `ItemDetail` with its two timestamps already turned into ISO strings. */
+export function serializeItemDetail(item: ItemDetail): SerializedItemDetail {
+  return {
+    ...item,
+    createdAt: item.createdAt.toISOString(),
+    updatedAt: item.updatedAt.toISOString(),
+  };
+}
+
+/**
+ * What an edit needs to know about an item before it can validate one.
+ *
+ * `contentType` picks the schema, and the slug is what the action revalidates —
+ * both of them properties of the stored row rather than of the submission, which
+ * is the point: neither can be influenced by what the client sends.
+ */
+export interface ItemEditContext {
+  contentType: ItemContentKind;
+  /** The `/items/[slug]` page this item appears on. */
+  typeSlug: string;
+}
+
+/** Scoped by `userId`, so another user's item reads as a missing one. */
+export async function getItemEditContext(
+  userId: string,
+  id: string,
+): Promise<ItemEditContext | null> {
+  const item = await prisma.item.findFirst({
+    where: { id, userId },
+    select: { contentType: true, itemType: { select: { slug: true } } },
+  });
+
+  if (!item) {
+    return null;
+  }
+
+  return { contentType: item.contentType, typeSlug: item.itemType.slug };
+}
+
+/** The columns an edit may write. Which of them apply follows `contentType`. */
+export interface ItemUpdate {
+  title: string;
+  description?: string | null;
+  content?: string | null;
+  language?: string | null;
+  url?: string | null;
+}
+
+/**
+ * Applies an edit and returns the item as it now stands, or `null` when this
+ * user has no such item.
+ *
+ * The write is scoped in the `where` rather than guarded by a preceding
+ * ownership read: a wrong owner updates 0 rows, and that count *is* the
+ * authorization result, with no window between checking and writing. The
+ * `getItemEditContext` call the action makes first is for the schema and the
+ * revalidation path — it is not what makes this safe.
+ *
+ * Tags are replaced wholesale rather than diffed. The join rows carry nothing
+ * but the pair, so re-creating them loses no information, and a diff would be
+ * three queries to save one. The `Tag` rows themselves are created on demand and
+ * shared: `@@unique([userId, name])` is what makes the upsert idempotent per
+ * user.
+ *
+ * All of it runs in one transaction, so a failure part-way cannot leave an item
+ * holding its new title alongside its old tags.
+ */
+export async function updateItem(
+  userId: string,
+  id: string,
+  fields: ItemUpdate,
+  tagNames: string[],
+): Promise<ItemDetail | null> {
+  const updated = await prisma.$transaction(async (tx) => {
+    const { count } = await tx.item.updateMany({
+      where: { id, userId },
+      data: fields,
+    });
+
+    if (count === 0) {
+      return false;
+    }
+
+    await tx.itemTag.deleteMany({ where: { itemId: id } });
+
+    // Sequentially rather than through `Promise.all`: an interactive
+    // transaction runs on a single connection, and firing the upserts at it in
+    // parallel is how they deadlock against each other.
+    const tagIds: string[] = [];
+
+    for (const name of tagNames) {
+      const tag = await tx.tag.upsert({
+        where: { userId_name: { userId, name } },
+        create: { userId, name },
+        update: {},
+        select: { id: true },
+      });
+
+      tagIds.push(tag.id);
+    }
+
+    if (tagIds.length > 0) {
+      await tx.itemTag.createMany({
+        data: tagIds.map((tagId) => ({ itemId: id, tagId })),
+      });
+    }
+
+    return true;
+  });
+
+  if (!updated) {
+    return null;
+  }
+
+  // Re-read rather than assemble the response from what was written: the
+  // caller renders type, tags and collections too, and only the row knows the
+  // `updatedAt` Postgres just set.
+  return getItem(userId, id);
+}
+
 export interface ItemStats {
   total: number;
   favorites: number;

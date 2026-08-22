@@ -1,16 +1,71 @@
-# Current Feature
+# Current Feature: Item Drawer — Edit Mode
 
 ## Status
 
-Complete
+In Progress
 
 ## Goals
 
-<!-- Bullet points of what success looks like -->
+- The drawer's Edit button (currently `disabled` in `ItemActionBar`) toggles the open sheet from view mode into an inline edit mode — same sheet, same item, fields become inputs
+- In edit mode the action bar is replaced by Save and Cancel; Cancel discards and returns to view mode, Save persists and returns to view mode showing the saved values
+- Editable for every type: Title (required), Description (optional), Tags (comma-separated input → array on save)
+- Editable per `contentType`, not per type name: Content (textarea) and Language for TEXT, URL for URL
+- Item type, collections and the created/updated dates stay display-only
+- `updateItem` in `src/actions/items.ts` — the project's **first** item mutation: re-derives the user from `auth()`, validates with Zod, scopes the write by `userId`, and never trusts an owner id from the client
+- `updateItem` query function in `src/lib/db/items.ts`, replacing the item's tags and returning the updated `ItemDetail` so the drawer refreshes without a second fetch
+- A toast on save success and on failure, plus `router.refresh()` so the card behind the drawer reflects the change
+- Unit tests for the new action, per the Vitest scope (`src/actions/**`)
 
 ## Notes
 
-<!-- Additional context, constraints, or details from the spec -->
+**Two shadcn components are missing.** `textarea` and `sonner` are both absent from
+`src/components/ui/` — the spec needs the first for Content and the second for its
+toasts. `npx shadcn@latest add textarea sonner`, and `<Toaster />` has to be mounted in
+the `(app)` layout. `components.json` pins `"style": "radix-nova"`, so the additions
+match the existing look. No migration and no non-shadcn dependency: `title`,
+`description`, `content`, `language`, `url` and the `ItemTag` join have all been on the
+schema since the database feature.
+
+**One conflict to resolve before implementing.** The spec asks for
+`updateItem(itemId, data)` returning `{ success, data, error }`.
+`context/coding-standards.md` (Error Handling) explicitly rejects that wrapper and
+mandates a **flat** state object (`error` / `fieldErrors` / `message`), which every
+action in `src/actions/` uses and which `docs/item-crud-architecture.md` §5 records as a
+resolved question. The spec's call *signature* is fine — it also says "no form library,
+controlled inputs with local state", so this is not a `useActionState` form and does not
+need `(prev, formData)`. Only the return shape disagrees. Recommendation: keep
+`updateItem(itemId, data)` and return the flat shape plus the updated item, rather than
+introduce the one wrapper the standards name as the thing not to do.
+
+**The drawer's fetch cache must be cleared on save.** `ItemDrawer` stores its fetch
+result keyed by item id and deliberately reuses it when the same item is reopened. The
+item-drawer review flagged that the feature adding Edit *has to* clear it — otherwise
+the drawer will keep serving pre-edit values. That is this feature.
+
+**How the write is scoped.** Follow `docs/item-crud-architecture.md` §5: one atomic
+`updateMany({ where: { id, userId } })` rather than a `findUnique` ownership check
+followed by an `update`, so a wrong owner updates 0 rows and the count *is* the
+authorization result. Tags are per-user with `@@unique([userId, name])`, so
+get-or-create is an `upsert` on that composite key; the replace (disconnect all, connect
+or create) and the item update belong in one transaction, and the fresh `ItemDetail`
+read comes after it.
+
+**Type is not editable, which removes the one authz hole.** §5's rule 4 warns that a
+submitted `itemTypeId` could file an item under another user's custom type. The spec
+keeps the type fixed, so nothing here accepts an `itemTypeId` at all — but the fields
+shown must still branch on the item's `contentType` (`TEXT` / `URL` / `FILE`), never on
+the type's name, so a custom type flows through unchanged.
+
+**Revalidate as well as refresh.** `router.refresh()` covers the page the drawer is
+open on. `revalidatePath("/dashboard")` and `revalidatePath("/items/<slug>")` in the
+action are what stop the client-side Router Cache serving a stale list when the user
+navigates back to a page already visited in this session.
+
+**Open, deliberately out of scope:** Favorite, Pin and Delete stay disabled in the
+action bar — this feature wires Edit only. Collections stay display-only ("managed
+separately"). The Content textarea is plain text; no Markdown editor or syntax
+highlighter is chosen or installed. The FILE branch has no editable payload, since
+nothing uploads yet.
 
 ## History
 
@@ -363,3 +418,4 @@ Complete
 - Fixed an unrelated pre-existing bug in `DashboardTopBar` at the user's request, committed separately as `fix: stop the dashboard top bar overflowing at narrow widths`. The button group was shrinkable while the buttons inside it were `shrink-0`, so they overflowed its box and scrolled the page sideways; the group is now `shrink-0` and the search takes the deficit, which needed `min-w-0` before an `<input>` would yield its intrinsic width. The labels collapse to icons via a **container** query, not a viewport one, because the bar sits inside `SidebarInset` — at a 768px viewport the header is 497px with the sidebar open and 753px with it closed, and a media query cannot tell those apart
 - Feature complete — `npx tsc --noEmit`, `npm run lint`, `npm test` (62 tests, 10 new for `getItem`) and `npm run build` all pass, with `/api/items/[id]` listed as a new `ƒ` route. Merged into `main` with `--no-ff` and the branch deleted
 - Still open, unchanged by this feature: `/collections` and `/collections/[id]` still 404, and the sidebar's "View all collections" row still leads nowhere; `/profile` still has no way to edit a name or avatar; expired verification and reset tokens are still never swept; a signed-in user visiting `/sign-in` still sees the form; rate limiting is inert on every deployed environment until the Upstash variables are added there; `EMAIL_FROM` still needs a domain verified in Resend; and the Vercel Production/Preview environment variables have still never been checked
+- Loaded `context/features/item-drawer-edit-spec.md` (asked for as `item-drawer-edit.spec.md`) and set the current feature to the item drawer's edit mode — the first item *mutation* in the project, shipping `updateItem` in a new `src/actions/items.ts`, an `updateItem` query function, and an inline edit mode inside the existing drawer. Loading it surfaced one conflict and four constraints: the spec's `{ success, data, error }` return shape is the exact wrapper `context/coding-standards.md` rejects in favour of the flat `error`/`fieldErrors`/`message` object every existing action returns, left as a decision for `start` (the spec's `updateItem(itemId, data)` signature itself is fine, since this is controlled local state rather than a `useActionState` form); `textarea` and `sonner` are both missing from `src/components/ui/` and the toast needs a `<Toaster />` mounted in the `(app)` layout, while no migration and no other dependency is needed; the drawer's id-keyed fetch cache **must** be cleared on save, which the item-drawer review explicitly assigned to this feature; the write has to be one `updateMany({ where: { id, userId } })` with tags upserted on `@@unique([userId, name])` inside a transaction, per `docs/item-crud-architecture.md` §5; and keeping the item type non-editable removes §5's `itemTypeId` authz hole entirely, though the fields shown must still branch on `contentType` rather than the type's name
