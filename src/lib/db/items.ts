@@ -34,6 +34,20 @@ export function getRecentItems(
   return findItems({ userId, isPinned: false }, limit);
 }
 
+/**
+ * Every item the user filed under one type, newest first, for `/items/[slug]`.
+ *
+ * Unlike the two dashboard lists this one is uncapped: it is the whole point of
+ * the page, and the `@@index([itemTypeId])` on `Item` is what keeps the filter
+ * cheap.
+ */
+export function getItemsByType(
+  userId: string,
+  itemTypeId: string,
+): Promise<ItemSummary[]> {
+  return findItems({ userId, itemTypeId });
+}
+
 export interface ItemStats {
   total: number;
   favorites: number;
@@ -49,9 +63,9 @@ export async function getItemStats(userId: string): Promise<ItemStats> {
   return { total, favorites };
 }
 
-/** Both item lists differ only in their filter, so they share one query. */
+/** The item lists differ only in their filter, so they share one query. */
 async function findItems(
-  where: { userId: string; isPinned?: boolean },
+  where: { userId: string; isPinned?: boolean; itemTypeId?: string },
   take?: number,
 ): Promise<ItemSummary[]> {
   const items = await prisma.item.findMany({
