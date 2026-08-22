@@ -1,8 +1,9 @@
 "use client";
 
-import { Check, Copy, Pencil, Pin, Star, Trash2 } from "lucide-react";
+import { Check, Copy, Pencil, Pin, Star } from "lucide-react";
 import { useEffect, useState } from "react";
 
+import { DeleteItemDialog } from "@/components/dashboard/DeleteItemDialog";
 import { Button } from "@/components/ui/button";
 import type { SerializedItemDetail } from "@/lib/db/items";
 import { cn } from "@/lib/utils";
@@ -14,19 +15,21 @@ interface ItemActionBarProps {
   item: SerializedItemDetail;
   /** Switches the drawer into edit mode, replacing this bar. */
   onEdit: () => void;
+  /** Fired once the item has actually been deleted. */
+  onDeleted: () => void;
 }
 
 /**
  * The drawer's action row: Favorite, Pin and Copy on the left, Edit and Delete
  * pushed to the right.
  *
- * **Copy and Edit work; Favorite, Pin and Delete do not.** The three inert ones
+ * **Copy, Edit and Delete work; Favorite and Pin do not.** The two inert ones
  * render the item's real state — a filled amber star when it is a favorite —
  * but cannot change it: each needs a mutation `src/actions/items.ts` does not
  * have yet. They stay `disabled` rather than hidden so the bar matches its
  * design and so the unimplemented state is obvious rather than silent.
  */
-export function ItemActionBar({ item, onEdit }: ItemActionBarProps) {
+export function ItemActionBar({ item, onEdit, onDeleted }: ItemActionBarProps) {
   const copyable = getCopyableText(item);
 
   return (
@@ -54,15 +57,11 @@ export function ItemActionBar({ item, onEdit }: ItemActionBarProps) {
           Edit
         </Button>
 
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          disabled
-          aria-label="Delete item"
-          className="text-destructive"
-        >
-          <Trash2 className="size-4" />
-        </Button>
+        <DeleteItemDialog
+          itemId={item.id}
+          itemTitle={item.title}
+          onDeleted={onDeleted}
+        />
       </div>
     </div>
   );

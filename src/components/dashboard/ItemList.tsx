@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
 
 import { ItemCard } from "@/components/dashboard/ItemCard";
@@ -29,14 +30,32 @@ interface ItemListProps {
  * nothing for the extra reach.
  */
 export function ItemList({ items, className }: ItemListProps) {
+  const router = useRouter();
+
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [isOpen, setIsOpen] = useState(false);
+  const [deletedIds, setDeletedIds] = useState<string[]>([]);
   const triggerRef = useRef<HTMLElement | null>(null);
+
+  // Hiding the card here rather than waiting for `router.refresh()` is what
+  // keeps a deleted item unclickable in the window before the server's answer
+  // lands — and it is what lets the drawer keep its cached copy, which it needs
+  // to render while the sheet animates out. Once the refresh arrives the id is
+  // simply no longer in `items` and the entry is inert.
+  const visible = items.filter((item) => !deletedIds.includes(item.id));
+
+  function handleDeleted(deletedId: string) {
+    setDeletedIds((current) => [...current, deletedId]);
+    setIsOpen(false);
+    // The list this component was handed is the server's older render, and the
+    // stats and sidebar counts above it are stale by one item too.
+    router.refresh();
+  }
 
   return (
     <>
       <div className={className}>
-        {items.map((item) => (
+        {visible.map((item) => (
           <ItemCard
             key={item.id}
             item={item}
@@ -58,6 +77,7 @@ export function ItemList({ items, className }: ItemListProps) {
         itemId={selectedId}
         open={isOpen}
         onOpenChange={setIsOpen}
+        onDeleted={handleDeleted}
         // Radix restores focus to whatever held it when the sheet opened, and
         // that is the document body: the card's button is not a `SheetTrigger`,
         // because the sheet is opened from state rather than by the primitive.

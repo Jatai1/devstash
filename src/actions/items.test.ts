@@ -18,6 +18,7 @@ vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("@/lib/db/items", () => ({
   getItemEditContext: vi.fn(),
   updateItem: vi.fn(),
+  deleteItem: vi.fn(),
   serializeItemDetail: vi.fn((item: { id: string }) => ({
     ...item,
     serialized: true,
@@ -27,7 +28,7 @@ vi.mock("@/lib/db/items", () => ({
 const { auth } = await import("@/auth");
 const { revalidatePath } = await import("next/cache");
 const db = await import("@/lib/db/items");
-const { updateItem } = await import("@/actions/items");
+const { deleteItem, updateItem } = await import("@/actions/items");
 
 const USER_ID = "user_1";
 const ITEM_ID = "item_1";
@@ -52,6 +53,7 @@ beforeEach(() => {
   vi.mocked(db.updateItem).mockResolvedValue({
     id: ITEM_ID,
   } as never);
+  vi.mocked(db.deleteItem).mockResolvedValue(true);
 });
 
 describe("updateItem", () => {
@@ -201,6 +203,104 @@ describe("updateItem", () => {
     storedAs("URL", "links");
 
     await updateItem(ITEM_ID, { title: "Docs", url: "https://a.co" });
+
+    expect(revalidatePath).toHaveBeenCalledWith("/dashboard");
+    expect(revalidatePath).toHaveBeenCalledWith("/items/links");
+  });
+});
+
+describe("deleteItem", () => {
+  it("refuses when the session does not resolve", async () => {
+    // A Server Action is a public endpoint, so the action re-derives the user
+    // rather than trusting the page that rendered the button.
+    signedIn(null);
+
+    expect(await deleteItem(ITEM_ID)).toEqual({
+      error: "Your session has expired. Sign in again.",
+    });
+
+    expect(db.getItemEditContext).not.toHaveBeenCalled();
+    expect(db.deleteItem).not.toHaveBeenCalled();
+  });
+
+  /** The id comes from the client, so both calls carry the session's user. */
+  it("scopes both the lookup and the delete to the signed-in user", async () => {
+    await deleteItem(ITEM_ID);
+
+    expect(db.getItemEditContext).toHaveBeenCalledWith(USER_ID, ITEM_ID);
+    expect(db.deleteItem).toHaveBeenCalledWith(USER_ID, ITEM_ID);
+  });
+
+  /**
+   * The lookup runs first only because the revalidation path lives on the row
+   * and cannot be read once it is gone — it is not what makes the delete safe.
+   */
+  it("reads the type slug before the row is deleted", async () => {
+    const order: string[] = [];
+
+    vi.mocked(db.getItemEditContext).mockImplementation(async () => {
+      order.push("read");
+
+      return { contentType: "TEXT", typeSlug: "snippets" };
+    });
+    vi.mocked(db.deleteItem).mockImplementation(async () => {
+      order.push("delete");
+
+      return true;
+    });
+
+    await deleteItem(ITEM_ID);
+
+    expect(order).toEqual(["read", "delete"]);
+  });
+
+  it("answers the same for a missing item and someone else's item", async () => {
+    // Distinguishing them would confirm that an id exists, which is what an
+    // id-guessing caller wants to learn.
+    vi.mocked(db.getItemEditContext).mockResolvedValue(null);
+
+    expect(await deleteItem(ITEM_ID)).toEqual({
+      error: "That item no longer exists.",
+    });
+
+    expect(db.deleteItem).not.toHaveBeenCalled();
+    expect(revalidatePath).not.toHaveBeenCalled();
+  });
+
+  it("reports not-found when the row goes between the read and the write", async () => {
+    // Rare, but the count is the authorization result and it says this user
+    // has no such item.
+    vi.mocked(db.deleteItem).mockResolvedValue(false);
+
+    expect(await deleteItem(ITEM_ID)).toEqual({
+      error: "That item no longer exists.",
+    });
+
+    expect(revalidatePath).not.toHaveBeenCalled();
+  });
+
+  it("reports a failed delete rather than throwing", async () => {
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    vi.mocked(db.deleteItem).mockRejectedValue(new Error("connection lost"));
+
+    expect(await deleteItem(ITEM_ID)).toEqual({
+      error: "Could not delete this item just now. Try again.",
+    });
+
+    // An error boundary would replace the drawer the dialog is sitting in.
+    expect(logged).toHaveBeenCalled();
+    expect(revalidatePath).not.toHaveBeenCalled();
+  });
+
+  it("confirms the delete with a message and no error", async () => {
+    expect(await deleteItem(ITEM_ID)).toEqual({ message: "Item deleted." });
+  });
+
+  it("revalidates the dashboard and the item's own type page", async () => {
+    storedAs("URL", "links");
+
+    await deleteItem(ITEM_ID);
 
     expect(revalidatePath).toHaveBeenCalledWith("/dashboard");
     expect(revalidatePath).toHaveBeenCalledWith("/items/links");
