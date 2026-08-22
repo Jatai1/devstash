@@ -1,90 +1,16 @@
-# Current Feature: Rate Limiting for Auth
+# Current Feature
 
 ## Status
 
-In Progress
+Not Started
 
 ## Goals
 
-- Add `src/lib/rate-limit.ts`: an Upstash Redis client plus a reusable sliding-window
-  limiter that returns `{ success, remaining, reset }`
-- Derive the caller's IP from `x-forwarded-for` (Vercel) with a sane fallback, and
-  combine it with the submitted email where the spec asks for a tighter key
-- Enforce the spec's five limits: sign-in 5 / 15 min (IP + email), register 3 / 1 h (IP),
-  forgot-password 3 / 1 h (IP), reset-password 5 / 15 min (IP), resend-verification
-  3 / 15 min (IP + email)
-- Return `429` with `{ error: "Too many attempts. Please try again in X minutes." }` and a
-  `Retry-After` header from `POST /api/auth/register`
-- Surface a user-friendly "too many attempts" message on every rate-limited form
-- Fail **open** — if Upstash is unreachable or unconfigured, the request proceeds
-- Document `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN` in `.env.example`
+<!-- Bullet points of what success looks like -->
 
 ## Notes
 
-**Spec source:** `context/features/rate-limiting-spec.md`, moved there during `start`
-from `src/lib/`, where it had been sitting alongside application code.
-
-**Decisions taken at `start`:** Upstash credentials supplied manually rather than through
-`vercel integration add`; limits reported inline via each form's existing error slot
-rather than by adding a toast component; and sign-in limited in **both** the Server
-Action and `authorize` so a direct POST to the callback route is counted too.
-
-**The endpoint table does not match this codebase.** Only one of the five rows is an API
-route. Four of them are Server Actions, which changes what "return a 429" can mean:
-
-| Spec row | What actually exists |
-|---|---|
-| `/api/auth/callback/credentials` (login) | Server Action `signInWithCredentials` — `src/actions/auth.ts:50`; the NextAuth callback route is reached *through* it |
-| `/api/auth/register` | Real route — `src/app/api/auth/register/route.ts` |
-| `/api/auth/forgot-password` | Server Action `requestPasswordReset` — `src/actions/password-reset.ts:47` |
-| `/api/auth/reset-password` | Server Action `resetPassword` — `src/actions/password-reset.ts:114` |
-| `/api/auth/resend-verification` | Server Action `resendVerificationEmail` — `src/actions/auth.ts:138` |
-
-How each was resolved:
-
-- `429` + `Retry-After` is implemented on the register route, the only one that can
-  carry them. The four actions return the limit message through their existing `error`
-  field, so **no form changed** — all five already render `state.error`.
-- Sign-in is counted in exactly one place, `authorize`, which every path reaches. The
-  Server Action only **peeks** (`getRemaining`, which runs no `INCRBY`), purely to
-  render a precise "try again in N minutes" — the code `authorize` throws travels in a
-  redirect URL and cannot carry a number. If both consumed, one submission would cost
-  two of five attempts.
-- A successful sign-in clears its window, so only failures count toward the budget.
-- `RATE_LIMITED_CODE` was added to `src/lib/auth-errors.ts` so a direct callback POST
-  gets real copy rather than "email and password do not match".
-
-Verification notes for anyone repeating it:
-
-- **Rate limiting cannot be exercised from a browser on localhost.** Next sets no
-  forwarded headers for direct requests, so `getClientIp()` returns null and everything
-  fails open. Testing needs either `curl -H "x-forwarded-for: ..."` or a proxy that
-  injects one. A proxy must leave `host` alone — Next compares `x-forwarded-host` to
-  `origin` on Server Action requests and aborts on a mismatch — and Auth.js will still
-  reject proxied sign-ins with `UntrustedHost` unless `trustHost` is set.
-- Importing `src/lib/rate-limit.ts` from a `tsx` script needs
-  `NODE_OPTIONS="--conditions=react-server"`, or `server-only` throws.
-
-Other constraints:
-
-- `@upstash/ratelimit` and `@upstash/redis` are installed, and the credentials in `.env`
-  point at a live Upstash database (`obliging-wasp-69934.upstash.io`). Vercel's
-  Production and Preview environments do **not** have these variables yet, so rate
-  limiting is inert on every deployed environment until they are added.
-- `src/proxy.ts` runs at the edge from `auth.config.ts` alone. If any limiting moves
-  into the proxy, it must not pull Prisma or bcrypt into that bundle — the split
-  documented in `CLAUDE.md` has to survive, and the bundle gets re-checked before merge.
-- Fail-open is a security trade-off the spec chose deliberately: an Upstash outage must
-  not lock everyone out of signing in. It also means a misconfigured environment
-  silently disables limiting, so the helper should log when it falls open.
-- Keying by IP + email means the email has to be validated (or at least normalized to
-  lowercase, as registration already does) before it becomes part of a Redis key.
-- This closes a gap logged across four previous features: the register route's `409`
-  confirms an email exists, and the four mail-triggering routes are unmetered.
-- Out of scope, still open from earlier features: `/items/[slug]`, `/collections` and
-  `/collections/[id]` 404; `/profile` cannot edit a name or avatar; expired tokens are
-  never swept; the Vercel Production/Preview environment variables have never been
-  checked.
+<!-- Additional context, constraints, or details from the spec -->
 
 ## History
 
@@ -368,3 +294,23 @@ Other constraints:
 - Left undone deliberately, both raised in review and neither blocking: `src/components/ui/alert-dialog.tsx` is now orphaned, since the dialog it backed was its only consumer, which regresses the "every `ui/*` file is reachable" property an earlier cleanup pass verified; and `src/components/dashboard/` now supplies the shell for `/profile` too, so the `Dashboard*` prefix is misleading, but renaming touches many imports and would have buried the real change
 - Still open, unchanged by this feature: `/items/[slug]`, `/collections` and `/collections/[id]` all 404, and the profile's type breakdown still links to the first of those; `/profile` still has no way to edit a name or avatar; rate limiting is still deferred across all four mail-triggering routes; expired tokens are still never swept; a signed-in user visiting `/sign-in` still sees the form; and the Vercel Production/Preview environment variables have still never been checked
 - Loaded `src/lib/rate-limiting-spec.md` and set the current feature to rate limiting the auth surface with Upstash Redis — the deferred item that four previous features logged as growing more pressing. Loading it surfaced that the spec's endpoint table describes five API routes while only `/api/auth/register` is one: sign-in, forgot-password, reset-password and resend-verification are all Server Actions, which cannot set a `429` status or a `Retry-After` header and must report the limit through their existing field-error shape instead. The spec's toast requirement also has nothing to render it — there is no toast component in `src/components/ui/` and every auth form shows errors inline
+- Built on branch `feature/rate-limiting-auth`. **No migration and no data-layer change** — rate limiting state lives entirely in Upstash Redis, and nothing about the Prisma schema, the token tables or the auth models moved
+- Three decisions were settled before building. Upstash was provisioned by hand rather than through `vercel integration add` at the user's choice, so no marketplace resource exists on the Vercel account. Limits are reported **inline** through each form's existing error slot rather than as toasts, which the spec asked for but the project has no component to render — that choice is what made the whole feature a zero-form-change diff, since all five auth forms already render `state.error`. And sign-in is limited in both the Server Action and `authorize`, rather than only the action
+- `src/lib/rate-limit.ts` is the single place any of it happens: an Upstash client resolved once and cached (including the `null` when unconfigured), one `Ratelimit` per limit name, and the spec's five windows in one `LIMITS` constant. Sliding rather than fixed, because a fixed window lets an attacker spend a full quota at 14:59 and another at 15:00
+- **Sign-in is counted in `authorize`, not in the Server Action.** That is the one place every path funnels through — the form, a direct POST to `/api/auth/callback/credentials`, and any future client — so limiting only the action would have left the callback route wide open, which is the brute-force case the feature exists to stop. The spec had flagged this as its own open risk ("may need custom sign-in handler")
+- The action therefore *peeks* rather than spends, via `getRemaining`, whose Lua runs no `INCRBY`. Its only job is to render a precise "try again in N minutes" — the code `authorize` throws travels in a redirect URL and cannot carry a number. If both consumed, one form submission would cost two of the five attempts and the advertised limit would really be two and a half. Verified empirically: 10 peeks left the counter untouched
+- A **successful** sign-in clears its window, so only failures count toward a brute-force budget and someone who mistyped four times then got it right is not left one attempt from a lockout
+- `RATE_LIMITED_CODE` was added to `auth-errors.ts` so a direct callback POST gets a real sentence instead of "email and password do not match". It is safe to name, unlike every other credentials failure, because it describes the caller's own request rate rather than anything about the account
+- The module **fails open** on four independent paths: no credentials, a thrown `headers()`, an Upstash error, and a 1s `timeout` on the limiter itself. An Upstash outage must not lock every user out of signing in. The cost is that a misconfigured environment enforces nothing, which is why the missing-credentials path logs a warning once
+- An unresolvable IP **skips** limiting rather than falling back to a shared `"unknown"` bucket. A shared bucket would be a global counter — three registrations per hour for the entire internet — so the failure mode of bucketing is far worse than that of skipping. Vercel always sets the forwarded headers, so this only affects local development
+- IP precedence is `x-vercel-forwarded-for` → `x-real-ip` → leftmost of `x-forwarded-for`, preferring the headers the platform sets over the one a client can append to
+- The IP-only limits (register, forgot-password, reset-password) run **before** the body is read or validated, since the key needs nothing from the request; a throttled caller does not get to hand the server a payload to parse. `forgotPassword` is keyed by IP alone deliberately — keying by address too would let one caller send three links each to as many mailboxes as they named
+- Verified against live Upstash and the running app rather than by reading. All five limiters enforce their exact counts with correctly namespaced keys; register returns `400/400/400/429` with `Retry-After: 2698` and the spec's message, creating **zero** rows because the limit precedes validation; a direct POST to `/api/auth/callback/credentials` gives 5 attempts then `code=RateLimited`, proving the bypass is closed; four wrong passwords then the right one signed in and left no key behind; and in a real browser the fourth forgot-password submission rendered "Too many attempts. Please try again in 40 minutes." inline
+- Two verification obstacles worth not rediscovering. **Rate limiting cannot be exercised from a browser on localhost** — Next sets no forwarded headers for direct requests, so `getClientIp()` returns null and everything fails open; testing needs `curl -H "x-forwarded-for: ..."` or a proxy that injects one. Such a proxy must leave `host` alone, because Next compares `x-forwarded-host` to `origin` on Server Action requests and aborts the action on a mismatch, and Auth.js will still refuse proxied sign-ins with `UntrustedHost` unless `trustHost` is set. Separately, importing `src/lib/rate-limit.ts` from a `tsx` script needs `NODE_OPTIONS="--conditions=react-server"`, or `server-only` throws
+- The review found three things, all fixed before merge. The refusal message was built independently in two functions that must always agree — extracted into one `refused()`. `checkRateLimit` and `getClientIp` were exported with no consumers and are now module-private. And the peek's **blocked** branch, the one that produces user-visible text, had never been executed by any test: had `getRemaining` not returned a `reset`, users would have seen "try again in NaN hours". Exercised directly and it is sound, but that was luck rather than verification
+- One suspicion was checked and cleared rather than assumed: a single `ephemeralCache` `Map` is shared by all five limiters, which looked like a cross-limiter collision. The library's `getKey()` joins the prefix before the cache sees the key, so the buckets stay distinct
+- Two things noted and deliberately left. That `ephemeralCache` grows unbounded within an instance's lifetime, since entries are pruned only when the same identifier is re-checked — each entry costs an attacker five requests to create and it is Upstash's documented pattern, so it was not worth a custom cache. And `peekIpAndEmailLimit` composes its key from request headers internally, so it returns `UNLIMITED` outside a request and cannot be unit-tested; taking an identifier the way `checkRateLimit` does would fix it
+- Feature complete — `npx tsc --noEmit`, `npm run lint` and `npm run build` all pass, and the edge bundle was re-checked through `middleware.js.nft.json`: 93 traced files with zero references to `upstash`, `ratelimit`, the new module, `bcryptjs`, Prisma or `resend`, so the `auth.config.ts`/`auth.ts` split still holds. Merged into `main` with `--no-ff`
+- The database was left untouched throughout (3 users, 0 tokens), every test used RFC 5737 documentation IPs, and all rate-limit keys were deleted from Upstash afterwards by explicit approval, leaving that namespace empty
+- **Rate limiting is inert on every deployed environment**: `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN` exist only in the local `.env`, and adding them to Vercel Production and Preview is what turns the feature on. Because the module fails open, nothing will error there — it will simply enforce nothing, silently
+- Still open, unchanged by this feature: `/items/[slug]`, `/collections` and `/collections/[id]` all 404; `/profile` still has no way to edit a name or avatar; expired verification and reset tokens are still never swept and do not cascade when a user is deleted; a signed-in user visiting `/sign-in` still sees the form; `EMAIL_FROM` still needs a domain verified in Resend before real users sign up; and the Vercel Production/Preview environment variables have still never been checked
