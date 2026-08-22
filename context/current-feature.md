@@ -1,17 +1,67 @@
-# Current Feature
+# Current Feature: Item Create
 
 ## Status
 
-Complete
+In Progress
 
 ## Goals
 
-<!-- Bullet points of what success looks like -->
+- The "New Item" button in the top bar opens a shadcn `Dialog` holding a create form, instead of doing nothing.
+- The form picks an item type, and the fields below it follow what that type stores — a text body for TEXT types, a URL for links.
+- `createItem` in `src/lib/db/items.ts` writes the row and its tags, and `createItem` in `src/actions/items.ts` validates with Zod first.
+- The new item is filed only under a type the user is actually allowed to use.
+- Success raises a sonner toast, closes the dialog and refreshes the lists behind it; failures report inline against the offending field.
+- Unit tests cover the new Server Action, the new query function and the create schema.
 
 ## Notes
 
-<!-- Additional context, constraints, or details from the spec -->
+**Source:** `context/features/item-create-spec.md`. This is the third item mutation, after the drawer's edit mode and delete, and the first that creates a row.
 
+**No migration.** Every column already exists — `title`, `description`, `contentType`, `content`, `language`, `url`, `itemTypeId` have been on `Item` since the database feature.
+
+**Two new shadcn components, neither installed: `dialog` and `select`.** The `radix-ui` unified package is already a dependency, so — as with `alert-dialog` last feature — the CLI should write components without adding a package. Verify that rather than assume it: the `sonner` addition once pulled in `next-themes` as a side effect.
+
+### The spec's field rule contradicts the project's, and the project's should win
+
+The spec branches on **type name**: content + language for `snippet`/`command`, content alone for `prompt`/`note`. But all four are `contentKind: TEXT`, and `docs/item-types.md` sets the governing rule that code branches on `contentKind`, never on the name. Two concrete problems with the spec's version:
+
+- `ItemEditForm` already shows Language for **every** TEXT item. Following the spec would mean creating a note with no Language field and then seeing one the moment you edit it.
+- A custom TEXT type matches none of the four names, so the rule would not say what to do with it.
+
+Language is already optional and blank-clears to `NULL`, so showing it for all TEXT types costs nothing and keeps create and edit telling the same story. Flagging it here rather than silently diverging — if the intent really is a name-based rule, that is a decision to make at `start`.
+
+### The type list is a query, not a constant
+
+The spec names five types. `getItemTypes(userId)` already returns the seven system types plus the user's custom ones, so hardcoding five would exclude custom types and go stale the moment one exists. The five the spec names are exactly what is left after dropping `contentKind: FILE` — so **filter on the kind, not on a name list**, which also correctly excludes a future custom FILE type. Nothing uploads yet, so a FILE item would be created with no payload and no way to add one.
+
+`ITEM_TYPE_SELECT` does **not** include `contentKind`, and the form needs it to decide which fields to render. `docs/item-crud-architecture.md` §10 already anticipated this: the wider select "is still the right call for the form, whenever it is built."
+
+### `itemTypeId` is the project's first real authorization hole
+
+`docs/item-crud-architecture.md` §5 rule 4. `itemTypeId` arrives from the client and `Item.itemTypeId` is a plain unscoped FK, so without a check a crafted submit can file an item under **another user's custom type** — which would then render that user's label and color in the attacker's sidebar. Edit sidestepped this entirely by making the type non-editable; create cannot, so this feature is where the check has to exist. The action must confirm the referenced type is a system type (`userId: null`) or owned by the caller — the same predicate `getItemTypeBySlug` uses.
+
+It needs that row anyway: `Item.contentType` is denormalized from `ItemType.contentKind`, so the resolved row is what supplies both the schema and the column. Read it from the database, never from the submission — the same rule `updateItem` follows when it picks a schema from the stored `contentType`.
+
+### Schema shape is a `start` decision
+
+`itemUpdateSchemaFor(contentKind)` already validates exactly these fields, and create needs the same rules plus an `itemTypeId`. Either rename it to something mutation-neutral and compose a create variant on top, or add a parallel `itemCreateSchemaFor`. Worth settling before writing it so the two cannot drift — the whole point of the file is that a rule cannot apply to one path and not the other. `parseTagInput` and the tag normalizing are reusable unchanged.
+
+### The dialog needs a client boundary in a server component
+
+`DashboardTopBar` is a server component with display-only buttons, and it lives in the **`(app)` layout** — so it renders on `/dashboard`, `/items/[slug]` and all three `/profile` pages. Two consequences:
+
+- The smallest client boundary is a `NewItemDialog` component owning the trigger and the form, the way `ItemList` wraps the cards rather than making the pages client components. The type list has to be queried server-side and passed in as props.
+- "New Item" will therefore be available on the profile pages too. That is what putting it in the shared shell already means today; moving it is a shell restructure and out of scope unless asked.
+
+**Revalidation.** `revalidatePath("/dashboard")` and `revalidatePath(`/items/${slug}`)` for the created item's type, exactly as update and delete do. Both pages are `force-dynamic`, so this is the client-side Router Cache.
+
+**Collections are not part of this.** The spec has no collection picker, so items are created unfiled. The drawer already hides its Collections section when empty, so nothing renders wrong — and `/collections/[id]` still 404s regardless.
+
+**A form that resets itself needs a changing value.** If the dialog is reopened rather than remounted, a second consecutive create must not leave the first one's values in the inputs. `ChangePasswordState`'s `succeededAt` in `src/actions/profile.ts` documents this exact bug, and it was only ever caught by performing the action *twice* — worth doing here.
+
+**Plan limits, optional.** `docs/item-crud-architecture.md` §9 proposes a `checkPlanLimits(userId, itemType)` seam called from `createItem` and nowhere else, returning `null` unconditionally today so launch is a config flip rather than a rebuild. The spec does not ask for it. Worth deciding at `start` whether it goes in now, while there is exactly one call site to add it to.
+
+**Testing.** Vitest covers Server Actions and utilities only. The action needs the no-session refusal, a type belonging to another user being refused, `contentType` being taken from the resolved row rather than the payload, field errors, and the revalidation paths; the query function needs the tag upsert and the scoped write; the schema needs the create-specific rules.
 ## History
 
 <!-- Keep this updated. Earliest to latest -->
@@ -399,3 +449,4 @@ Complete
 - The development branch was left exactly at its seeded baseline — 18 items, 40 item-tag links, 18 item-collection links, 18 tags, 5 collections — with zero probe rows. Four throwaway items were created for the verification and all four deleted, three through the UI (which is the feature working) and one via SQL to set up the failure path; the orphan `probe-delete` tag they left behind was removed too, after showing what it was and that nothing used it
 - Known and deliberately left: after a delete the triggering card is unmounted, so `onCloseAutoFocus`'s `isConnected` guard declines to restore focus and a keyboard user lands on `<body>` — there is no obviously-correct element to focus once the card is gone. And `ItemList`'s `deletedIds` grows for the life of the page, which costs one string per real deletion
 - Still open, unchanged by this feature: Favorite and Pin are still disabled in the drawer's action bar, and collection membership is still display-only; there is still no way to *create* an item; `/collections` and `/collections/[id]` still 404; `/profile` still has no way to edit a name or avatar; expired verification and reset tokens are still never swept; a signed-in user visiting `/sign-in` still sees the form; rate limiting is inert on every deployed environment until the Upstash variables are added there; `EMAIL_FROM` still needs a domain verified in Resend; and the Vercel Production/Preview environment variables have still never been checked
+- Loaded `context/features/item-create-spec.md` and set the current feature to item creation — a shadcn `Dialog` behind the top bar's "New Item" button, a `createItem` Server Action and query function, and a toast on success. Loading it surfaced one contradiction with the codebase, one genuine security hole this feature is the first to face, and several settled constraints. The contradiction is the spec's per-type field rule: it gives `content` + `language` to `snippet`/`command` and `content` alone to `prompt`/`note`, but all four are `contentKind: TEXT`, `docs/item-types.md` sets the rule that code branches on the kind and never on the name, and `ItemEditForm` already shows Language for every TEXT item — so following the spec literally would create a note with no Language field and then show one the instant it was edited, and would say nothing at all about a custom TEXT type. The hole is `itemTypeId`, which `docs/item-crud-architecture.md` §5 flags and which edit avoided entirely by making the type non-editable: it arrives from the client, `Item.itemTypeId` is an unscoped FK, and without a check a crafted submit files an item under another user's custom type, so the action has to confirm the row is a system type or the caller's own — which it needs regardless, since `Item.contentType` is denormalized from `ItemType.contentKind` and the resolved row is what must supply both the schema and the column. Also settled at load: **no migration** (every column exists), two shadcn components are missing (`dialog` and `select`, both expected to add no dependency now that `radix-ui` is installed, which the `sonner`/`next-themes` episode says to verify rather than assume), the type list must be queried rather than hardcoded and filtered on `contentKind: FILE` rather than by name since nothing uploads yet, `ITEM_TYPE_SELECT` needs widening to carry `contentKind` for the form as §10 predicted, and `DashboardTopBar` is a server component in the shared `(app)` layout — so the dialog needs its own client boundary and "New Item" will appear on the profile pages too, which is what living in the shell already means. Three things left as `start` decisions: whether the schema gets a renamed shared base or a parallel `itemCreateSchemaFor`, whether §9's `checkPlanLimits` seam goes in now while there is exactly one call site, and whether the spec's name-based field rule is really intended over the kind-based one

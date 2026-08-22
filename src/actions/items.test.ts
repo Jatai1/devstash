@@ -1,15 +1,17 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
- * Three boundaries. `@/auth` is mocked because importing it for real pulls
- * NextAuth, the Prisma adapter and bcrypt into the test; `@/lib/db/items`
- * because the queries behind it have their own tests and Postgres is not what
- * this file is about; and `next/cache` because `revalidatePath` throws outside
- * a request — the paths it is called with are themselves worth asserting.
+ * Four boundaries. `@/auth` is mocked because importing it for real pulls
+ * NextAuth, the Prisma adapter and bcrypt into the test; `@/lib/db/items` and
+ * `@/lib/db/item-types` because the queries behind them have their own tests,
+ * Postgres is not what this file is about, and importing either for real
+ * constructs a Prisma client and throws on the missing `DATABASE_URL`; and
+ * `next/cache` because `revalidatePath` throws outside a request — the paths it
+ * is called with are themselves worth asserting.
  *
  * Everything the action decides for itself — session handling, which schema the
- * stored `contentType` selects, what reaches the database and what is refused —
- * runs for real.
+ * resolved content kind selects, what reaches the database and what is refused
+ * — runs for real.
  */
 vi.mock("@/auth", () => ({ auth: vi.fn() }));
 
@@ -17,6 +19,7 @@ vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 
 vi.mock("@/lib/db/items", () => ({
   getItemEditContext: vi.fn(),
+  createItem: vi.fn(),
   updateItem: vi.fn(),
   deleteItem: vi.fn(),
   serializeItemDetail: vi.fn((item: { id: string }) => ({
@@ -25,10 +28,16 @@ vi.mock("@/lib/db/items", () => ({
   })),
 }));
 
+vi.mock("@/lib/db/item-types", () => ({ getCreatableItemType: vi.fn() }));
+
+vi.mock("@/lib/plan-limits", () => ({ checkPlanLimits: vi.fn() }));
+
 const { auth } = await import("@/auth");
 const { revalidatePath } = await import("next/cache");
 const db = await import("@/lib/db/items");
-const { deleteItem, updateItem } = await import("@/actions/items");
+const types = await import("@/lib/db/item-types");
+const plan = await import("@/lib/plan-limits");
+const { createItem, deleteItem, updateItem } = await import("@/actions/items");
 
 const USER_ID = "user_1";
 const ITEM_ID = "item_1";
@@ -54,7 +63,25 @@ beforeEach(() => {
     id: ITEM_ID,
   } as never);
   vi.mocked(db.deleteItem).mockResolvedValue(true);
+  vi.mocked(db.createItem).mockResolvedValue({ id: ITEM_ID } as never);
+  vi.mocked(plan.checkPlanLimits).mockResolvedValue(null);
+  offeredAs("TEXT", "snippets");
 });
+
+const TYPE_ID = "type_1";
+
+/** A type the picker offers, as `getCreatableItemType` resolves one. */
+function offeredAs(contentKind: "TEXT" | "URL", slug: string) {
+  vi.mocked(types.getCreatableItemType).mockResolvedValue({
+    id: TYPE_ID,
+    name: slug.replace(/s$/, ""),
+    label: slug,
+    icon: "Code",
+    color: "#3b82f6",
+    contentKind,
+    slug,
+  });
+}
 
 describe("updateItem", () => {
   it("refuses when the session does not resolve", async () => {
@@ -301,6 +328,221 @@ describe("deleteItem", () => {
     storedAs("URL", "links");
 
     await deleteItem(ITEM_ID);
+
+    expect(revalidatePath).toHaveBeenCalledWith("/dashboard");
+    expect(revalidatePath).toHaveBeenCalledWith("/items/links");
+  });
+});
+
+describe("createItem", () => {
+  const INPUT = { itemTypeId: TYPE_ID, title: "useAuth" };
+
+  it("refuses when the session does not resolve", async () => {
+    signedIn(null);
+
+    expect(await createItem(INPUT)).toEqual({
+      error: "Your session has expired. Sign in again.",
+    });
+
+    expect(types.getCreatableItemType).not.toHaveBeenCalled();
+    expect(db.createItem).not.toHaveBeenCalled();
+  });
+
+  /**
+   * The whole security story of this action. `Item.itemTypeId` is an unscoped
+   * FK, so the id has to be resolved against what *this* user may use before
+   * anything is written under it.
+   */
+  it("resolves the submitted type as the signed-in user", async () => {
+    await createItem(INPUT);
+
+    expect(types.getCreatableItemType).toHaveBeenCalledWith(USER_ID, TYPE_ID);
+  });
+
+  it("refuses a type this user may not file under, and writes nothing", async () => {
+    // Another user's custom type, a deleted one and a FILE type all read as
+    // `null` here. One message for all of them: naming which it was would
+    // confirm the id exists.
+    vi.mocked(types.getCreatableItemType).mockResolvedValue(null);
+
+    expect(await createItem(INPUT)).toEqual({
+      fieldErrors: { itemTypeId: ["Choose an item type"] },
+    });
+
+    expect(db.createItem).not.toHaveBeenCalled();
+    expect(revalidatePath).not.toHaveBeenCalled();
+  });
+
+  it("refuses an empty type without asking the database", async () => {
+    expect(await createItem({ ...INPUT, itemTypeId: "" })).toEqual({
+      fieldErrors: { itemTypeId: ["Choose an item type"] },
+    });
+
+    expect(types.getCreatableItemType).not.toHaveBeenCalled();
+  });
+
+  it("returns field errors and writes nothing when validation fails", async () => {
+    const state = await createItem({ ...INPUT, title: "   " });
+
+    expect(state.fieldErrors?.title).toEqual(["Title is required"]);
+    expect(state.item).toBeUndefined();
+    expect(db.createItem).not.toHaveBeenCalled();
+  });
+
+  /**
+   * The plan seam. Unenforced during development, so this asserts the wiring
+   * rather than a limit: the check is asked, and its refusal is what the caller
+   * sees.
+   */
+  it("asks the plan seam about the resolved type", async () => {
+    await createItem(INPUT);
+
+    expect(plan.checkPlanLimits).toHaveBeenCalledWith(
+      USER_ID,
+      expect.objectContaining({ name: "snippet" }),
+    );
+  });
+
+  it("surfaces a plan refusal and writes nothing", async () => {
+    vi.mocked(plan.checkPlanLimits).mockResolvedValue(
+      "Free accounts can save up to 50 items. Upgrade for unlimited.",
+    );
+
+    expect(await createItem(INPUT)).toEqual({
+      error: "Free accounts can save up to 50 items. Upgrade for unlimited.",
+    });
+
+    expect(db.createItem).not.toHaveBeenCalled();
+    expect(revalidatePath).not.toHaveBeenCalled();
+  });
+
+  it("refuses on the plan before parsing the payload", async () => {
+    // A refusal is about the account, not the fields, so it must not come back
+    // as a field error on a title the user cannot fix their way out of.
+    vi.mocked(plan.checkPlanLimits).mockResolvedValue("Upgrade to continue.");
+
+    const state = await createItem({ ...INPUT, title: "   " });
+
+    expect(state).toEqual({ error: "Upgrade to continue." });
+    expect(state.fieldErrors).toBeUndefined();
+  });
+
+  /**
+   * `contentType` is denormalized onto `Item`, and it comes from the resolved
+   * type row — never from the submission, which cannot be trusted to describe
+   * the type it named.
+   */
+  it("takes contentType and itemTypeId from the resolved row", async () => {
+    await createItem({
+      ...INPUT,
+      // Ignored: the row says TEXT.
+      ...({ contentType: "URL" } as object),
+    });
+
+    expect(db.createItem).toHaveBeenCalledWith(
+      USER_ID,
+      expect.objectContaining({ itemTypeId: TYPE_ID, contentType: "TEXT" }),
+      [],
+    );
+  });
+
+  /**
+   * The schema follows the resolved kind. A link stores a `url` and has no
+   * `content` field, so a body sent with one is dropped before the write.
+   */
+  it("chooses the schema from the resolved content kind", async () => {
+    offeredAs("URL", "links");
+
+    await createItem({
+      itemTypeId: TYPE_ID,
+      title: "Docs",
+      url: "https://nextjs.org/docs",
+      content: "smuggled",
+    });
+
+    expect(db.createItem).toHaveBeenCalledWith(
+      USER_ID,
+      {
+        title: "Docs",
+        description: null,
+        url: "https://nextjs.org/docs",
+        itemTypeId: TYPE_ID,
+        contentType: "URL",
+      },
+      [],
+    );
+  });
+
+  it("refuses a javascript: URL on a link", async () => {
+    // The drawer renders this straight into an `<a href>`, so accepting it
+    // would store an XSS payload.
+    offeredAs("URL", "links");
+
+    const state = await createItem({
+      itemTypeId: TYPE_ID,
+      title: "Docs",
+      url: "javascript:alert(1)",
+    });
+
+    expect(state.fieldErrors?.url).toBeDefined();
+    expect(db.createItem).not.toHaveBeenCalled();
+  });
+
+  it("normalizes tags before they reach the database", async () => {
+    await createItem({ ...INPUT, tags: [" react ", "react", ""] });
+
+    expect(db.createItem).toHaveBeenCalledWith(
+      USER_ID,
+      expect.anything(),
+      ["react"],
+    );
+  });
+
+  it("reports a failed write rather than throwing", async () => {
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    vi.mocked(db.createItem).mockRejectedValue(new Error("connection lost"));
+
+    expect(await createItem(INPUT)).toEqual({
+      error: "Could not create this item just now. Try again.",
+    });
+
+    // An error boundary would replace the dialog and lose what was typed.
+    expect(logged).toHaveBeenCalled();
+    expect(revalidatePath).not.toHaveBeenCalled();
+  });
+
+  it("returns the created item, serialized, with a success message", async () => {
+    const state = await createItem(INPUT);
+
+    expect(state.message).toBe("Item created.");
+    expect(state.item).toMatchObject({ id: ITEM_ID, serialized: true });
+    expect(state.error).toBeUndefined();
+  });
+
+  /**
+   * `message` is the same string on every success, which React compares equal
+   * — the bug `ChangePasswordState` documents. A form that clears itself needs
+   * a value that actually changes between two consecutive creates.
+   */
+  it("stamps a changing succeededAt on every success", async () => {
+    // The clock is driven rather than trusted: two real creates can land in
+    // the same millisecond, which would make this pass or fail by timing.
+    vi.spyOn(Date, "now")
+      .mockReturnValueOnce(1_000)
+      .mockReturnValueOnce(2_000);
+
+    const first = await createItem(INPUT);
+    const second = await createItem(INPUT);
+
+    expect(first.succeededAt).toBe(1_000);
+    expect(second.succeededAt).toBe(2_000);
+  });
+
+  it("revalidates the dashboard and the new item's type page", async () => {
+    offeredAs("URL", "links");
+
+    await createItem({ itemTypeId: TYPE_ID, title: "Docs" });
 
     expect(revalidatePath).toHaveBeenCalledWith("/dashboard");
     expect(revalidatePath).toHaveBeenCalledWith("/items/links");

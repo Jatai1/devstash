@@ -4,14 +4,21 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
 import { auth } from "@/auth";
+import { getCreatableItemType } from "@/lib/db/item-types";
 import {
+  createItem as createItemRow,
   deleteItem as deleteItemRow,
   getItemEditContext,
   serializeItemDetail,
   updateItem as updateItemRow,
   type SerializedItemDetail,
 } from "@/lib/db/items";
-import { itemUpdateSchemaFor, type ItemUpdateField } from "@/lib/item-schemas";
+import {
+  itemSchemaFor,
+  type ItemCreateField,
+  type ItemField,
+} from "@/lib/item-schemas";
+import { checkPlanLimits } from "@/lib/plan-limits";
 
 /**
  * What every action here says when the session does not resolve to a row.
@@ -38,6 +45,122 @@ async function currentUserId(): Promise<string | null> {
   return session?.user?.id ?? null;
 }
 
+/** What the create dialog submits. */
+export interface CreateItemInput {
+  itemTypeId: string;
+  title: string;
+  description?: string | null;
+  tags?: string[];
+  content?: string | null;
+  language?: string | null;
+  url?: string | null;
+}
+
+export interface CreateItemState {
+  /** Whole-form failure, rendered above the fields. */
+  error?: string;
+  /** Field-keyed messages, so the form can mark the offending input. */
+  fieldErrors?: Partial<Record<ItemCreateField, string[]>>;
+  /** Shown on success. */
+  message?: string;
+  /** The created item, so the caller can render it without a second request. */
+  item?: SerializedItemDetail;
+  /**
+   * Changes on every success, so a form that clears itself can tell two
+   * consecutive creates apart. `message` is the same string each time, which
+   * React compares equal — the bug `ChangePasswordState` documents.
+   */
+  succeededAt?: number;
+}
+
+/**
+ * Creates one item for the signed-in user.
+ *
+ * The order here is the whole security story. The **type is resolved and
+ * authorized first**, because it decides two things that must not come from the
+ * client: which schema validates the payload, and the `contentType` written to
+ * the row. `Item.itemTypeId` is a plain unscoped FK, so a submission naming
+ * another user's custom type would otherwise be filed under it — the hole
+ * `docs/item-crud-architecture.md` §5 flags, and the one the drawer's edit mode
+ * sidestepped by making the type non-editable.
+ *
+ * Fields belonging to another kind are dropped by the schema rather than
+ * checked for here, so a `url` sent with a snippet never reaches the database.
+ */
+export async function createItem(
+  input: CreateItemInput,
+): Promise<CreateItemState> {
+  const userId = await currentUserId();
+
+  if (!userId) {
+    return { error: NO_SESSION };
+  }
+
+  const itemType = input.itemTypeId
+    ? await getCreatableItemType(userId, input.itemTypeId)
+    : null;
+
+  if (!itemType) {
+    // One message for "no type chosen", "no such type" and "someone else's
+    // type". The last two are the same refusal a wrong owner gets anywhere
+    // else here, and naming which it was would confirm the id exists.
+    return { fieldErrors: { itemTypeId: ["Choose an item type"] } };
+  }
+
+  // After the type is resolved, because the answer depends on which type it
+  // is, and before the payload is parsed, because a refusal is not about the
+  // fields. Unenforced during development — see `PLAN_LIMITS_ENFORCED`.
+  const refusal = await checkPlanLimits(userId, itemType);
+
+  if (refusal) {
+    return { error: refusal };
+  }
+
+  const parsed = itemSchemaFor(itemType.contentKind).safeParse(input);
+
+  if (!parsed.success) {
+    return { fieldErrors: z.flattenError(parsed.error).fieldErrors };
+  }
+
+  const { tags, ...fields } = parsed.data;
+
+  let item;
+
+  try {
+    item = await createItemRow(
+      userId,
+      {
+        ...fields,
+        itemTypeId: itemType.id,
+        contentType: itemType.contentKind,
+      },
+      tags,
+    );
+  } catch (error) {
+    // Reported rather than thrown: an error boundary would replace the dialog
+    // and lose everything the user had typed.
+    console.error("Item create failed", error);
+
+    return { error: "Could not create this item just now. Try again." };
+  }
+
+  if (!item) {
+    return { error: "Could not create this item just now. Try again." };
+  }
+
+  // Both pages are `force-dynamic`, so this is the client-side Router Cache:
+  // without it, a page already visited this session would not show the new
+  // item.
+  revalidatePath("/dashboard");
+  revalidatePath(`/items/${itemType.slug}`);
+
+  return {
+    message: "Item created.",
+    item: serializeItemDetail(item),
+    succeededAt: Date.now(),
+  };
+}
+
 /**
  * What the drawer's edit form submits.
  *
@@ -58,7 +181,7 @@ export interface UpdateItemState {
   /** Whole-form failure, rendered above the fields. */
   error?: string;
   /** Field-keyed messages, so the form can mark the offending input. */
-  fieldErrors?: Partial<Record<ItemUpdateField, string[]>>;
+  fieldErrors?: Partial<Record<ItemField, string[]>>;
   /** Shown on success. */
   message?: string;
   /**
@@ -102,7 +225,7 @@ export async function updateItem(
     return { error: NOT_FOUND };
   }
 
-  const parsed = itemUpdateSchemaFor(context.contentType).safeParse(input);
+  const parsed = itemSchemaFor(context.contentType).safeParse(input);
 
   if (!parsed.success) {
     return { fieldErrors: z.flattenError(parsed.error).fieldErrors };

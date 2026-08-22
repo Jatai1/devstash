@@ -285,6 +285,66 @@ export async function updateItem(
   return getItem(userId, id);
 }
 
+/** The columns a create writes. Which of them apply follows the type's kind. */
+export interface ItemCreate extends ItemUpdate {
+  /** Already authorized by `getCreatableItemType` before it reaches here. */
+  itemTypeId: string;
+  /** Denormalized from `ItemType.contentKind`, never from the submission. */
+  contentType: ItemContentKind;
+}
+
+/**
+ * Writes a new item and its tags, and returns it as the drawer renders one.
+ *
+ * The shape mirrors `updateItem`: one transaction, tags upserted sequentially
+ * on `@@unique([userId, name])` because an interactive transaction runs on a
+ * single connection, then the joins created in one statement.
+ *
+ * There is no ownership check to make here — the row does not exist yet, so
+ * `userId` is written rather than matched. What has to be verified is the
+ * *type*, and that happens in `getCreatableItemType` before this is called;
+ * passing an unvetted `itemTypeId` in would file the item under whatever it
+ * names.
+ */
+export async function createItem(
+  userId: string,
+  fields: ItemCreate,
+  tagNames: string[],
+): Promise<ItemDetail | null> {
+  const id = await prisma.$transaction(async (tx) => {
+    const item = await tx.item.create({
+      data: { ...fields, userId },
+      select: { id: true },
+    });
+
+    const tagIds: string[] = [];
+
+    for (const name of tagNames) {
+      const tag = await tx.tag.upsert({
+        where: { userId_name: { userId, name } },
+        create: { userId, name },
+        update: {},
+        select: { id: true },
+      });
+
+      tagIds.push(tag.id);
+    }
+
+    if (tagIds.length > 0) {
+      await tx.itemTag.createMany({
+        data: tagIds.map((tagId) => ({ itemId: item.id, tagId })),
+      });
+    }
+
+    return item.id;
+  });
+
+  // Re-read for the same reason `updateItem` does: the caller renders the type,
+  // tags and collections too, and only the row knows the timestamps Postgres
+  // just set.
+  return getItem(userId, id);
+}
+
 /**
  * Deletes one item, reporting whether this user actually had it.
  *

@@ -135,14 +135,20 @@ const urlItemSchema = z.object({
 const fileItemSchema = z.object(itemBaseFields);
 
 /**
- * The schema for one item's editable fields, chosen by what it stores.
+ * The schema for one item's writable fields, chosen by what its type stores.
  *
  * Fields belonging to another kind are not in the returned object, and Zod
  * strips unknown keys — so a `url` submitted for a text item is dropped before
  * it can reach the database, without the action having to check for it.
+ *
+ * **Create and update share this deliberately.** The two write the same columns
+ * under the same rules, and the whole premise of this file is that a rule
+ * cannot apply to one path and not the other. Create picks the kind from the
+ * `ItemType` row it just authorized; update picks it from the stored
+ * `contentType` — in neither case from anything the client sent.
  */
-export function itemUpdateSchemaFor(contentType: ItemContentKind) {
-  switch (contentType) {
+export function itemSchemaFor(contentKind: ItemContentKind) {
+  switch (contentKind) {
     case "TEXT":
       return textItemSchema;
     case "URL":
@@ -152,14 +158,20 @@ export function itemUpdateSchemaFor(contentType: ItemContentKind) {
   }
 }
 
-/** The fields an update can report an error against. */
-export type ItemUpdateField =
+/** The fields a write can report an error against. */
+export type ItemField =
   | "title"
   | "description"
   | "tags"
   | "content"
   | "language"
   | "url";
+
+/**
+ * Create reports against one more control than update does: the type picker,
+ * which update has no equivalent of because an item's type is not editable.
+ */
+export type ItemCreateField = ItemField | "itemTypeId";
 
 /**
  * Splits the drawer's comma-separated tag box into names.

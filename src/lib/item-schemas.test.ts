@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 
-import { itemUpdateSchemaFor, parseTagInput } from "@/lib/item-schemas";
+import { itemSchemaFor, parseTagInput } from "@/lib/item-schemas";
 
 /**
  * Both helpers hand back an index-signature record rather than the schema's own
- * inferred type. `itemUpdateSchemaFor` returns a union of three schemas, so a
+ * inferred type. `itemSchemaFor` returns a union of three schemas, so a
  * call with a union argument narrows to the fields all three share — and half
  * of what these tests assert is precisely that a field is *absent* for one kind
  * and present for another, which a static type cannot express here.
@@ -18,7 +18,7 @@ function errorsFor(
   contentType: "TEXT" | "URL" | "FILE",
   input: unknown,
 ): FieldErrors | null {
-  const parsed = itemUpdateSchemaFor(contentType).safeParse(input);
+  const parsed = itemSchemaFor(contentType).safeParse(input);
 
   if (parsed.success) {
     return null;
@@ -31,7 +31,7 @@ function parse(
   contentType: "TEXT" | "URL" | "FILE",
   input: unknown,
 ): ParsedItem {
-  const parsed = itemUpdateSchemaFor(contentType).safeParse(input);
+  const parsed = itemSchemaFor(contentType).safeParse(input);
 
   if (!parsed.success) {
     throw new Error(
@@ -44,7 +44,7 @@ function parse(
   return parsed.data;
 }
 
-describe("itemUpdateSchemaFor — every kind", () => {
+describe("itemSchemaFor — every kind", () => {
   it("requires a title and trims it", () => {
     expect(parse("TEXT", { title: "  useAuth Hook  " }).title).toBe(
       "useAuth Hook",
@@ -84,7 +84,7 @@ describe("itemUpdateSchemaFor — every kind", () => {
   });
 });
 
-describe("itemUpdateSchemaFor — tags", () => {
+describe("itemSchemaFor — tags", () => {
   it("drops blanks and exact duplicates, keeping first-seen order", () => {
     expect(parse("TEXT", { title: "t", tags: [" b ", "", "a", "b"] }).tags)
       .toEqual(["b", "a"]);
@@ -113,7 +113,7 @@ describe("itemUpdateSchemaFor — tags", () => {
   });
 });
 
-describe("itemUpdateSchemaFor — payload fields by kind", () => {
+describe("itemSchemaFor — payload fields by kind", () => {
   it("keeps content and language for a text item", () => {
     expect(
       parse("TEXT", {
@@ -155,7 +155,7 @@ describe("itemUpdateSchemaFor — payload fields by kind", () => {
   });
 });
 
-describe("itemUpdateSchemaFor — url", () => {
+describe("itemSchemaFor — url", () => {
   it("accepts http and https", () => {
     expect(parse("URL", { title: "t", url: "http://a.co" }).url).toBe(
       "http://a.co",
