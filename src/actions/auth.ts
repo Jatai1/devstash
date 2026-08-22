@@ -12,6 +12,7 @@ import { resendVerificationSchema, signInSchema } from "@/lib/auth-schemas";
 import { isEmailVerificationEnabled } from "@/lib/email-verification";
 import { sendVerificationEmail } from "@/lib/email/send-verification-email";
 import { prisma } from "@/lib/prisma";
+import { limitByIpAndEmail, peekIpAndEmailLimit } from "@/lib/rate-limit";
 import { createVerificationToken } from "@/lib/verification-tokens";
 
 /** Where a successful sign-in lands when nothing else was requested. */
@@ -63,6 +64,17 @@ export async function signInWithCredentials(
       // emails are registered.
       error: getAuthErrorMessage("CredentialsSignin"),
     };
+  }
+
+  // A *peek*, not a spend: `authorize` in `src/auth.ts` is what consumes the
+  // token, so that a direct POST to the callback route is counted too. If both
+  // consumed, one submission would cost two of the five attempts. This is here
+  // purely so the form can name the exact wait — the code `authorize` throws
+  // travels in a redirect URL and cannot carry a number of minutes.
+  const rate = await peekIpAndEmailLimit("signIn", parsed.data.email);
+
+  if (!rate.success) {
+    return { error: rate.message };
   }
 
   try {
@@ -131,9 +143,9 @@ const RESEND_ACKNOWLEDGEMENT =
 /**
  * Issues a fresh verification link.
  *
- * Rate limiting is deliberately out of scope for this feature, which leaves
- * this endpoint able to trigger unmetered outbound mail — see the follow-ups in
- * `context/current-feature.md`.
+ * Rate limited by IP *and* email at 3 per 15 minutes: this endpoint triggers
+ * outbound mail on demand, so without a cap it is both a way to burn the
+ * Resend quota and a way to bury someone's inbox.
  */
 export async function resendVerificationEmail(
   _previous: ResendState,
@@ -145,6 +157,16 @@ export async function resendVerificationEmail(
 
   if (!parsed.success) {
     return { error: "Enter a valid email address." };
+  }
+
+  // Spent before any of the work below, including the flag check, so a
+  // throttled caller cannot use this to probe anything at all. Refusing here
+  // reveals nothing the shared acknowledgement protects: the message is about
+  // the caller's request rate, not about whether the address exists.
+  const rate = await limitByIpAndEmail("resendVerification", parsed.data.email);
+
+  if (!rate.success) {
+    return { error: rate.message };
   }
 
   // With verification off there is nothing to verify, so no mail is sent. The

@@ -10,6 +10,7 @@ import {
   resetPasswordWithToken,
 } from "@/lib/password-reset-tokens";
 import { prisma } from "@/lib/prisma";
+import { limitByIp } from "@/lib/rate-limit";
 
 export interface ForgotPasswordState {
   /** Rendered as-is; identical for every outcome. See below. */
@@ -40,14 +41,22 @@ const ACKNOWLEDGEMENT =
  * shared acknowledgement exists to prevent. The failure is logged instead, so
  * it is visible to us rather than to the person asking.
  *
- * Rate limiting remains out of scope project-wide, which leaves this as a
- * fourth endpoint able to trigger unmetered outbound mail — see the follow-ups
- * in `context/current-feature.md`.
+ * Rate limited by IP at 3 per hour. Keyed by IP *alone*, deliberately: keying
+ * by address as well would let one caller send three links each to as many
+ * mailboxes as they cared to name, which is the abuse this cap is for.
  */
 export async function requestPasswordReset(
   _previous: ForgotPasswordState,
   formData: FormData,
 ): Promise<ForgotPasswordState> {
+  // Checked before the body is even validated. The key needs no field from it,
+  // and doing it first means a flood of malformed submissions is throttled too.
+  const rate = await limitByIp("forgotPassword");
+
+  if (!rate.success) {
+    return { error: rate.message };
+  }
+
   const parsed = forgotPasswordSchema.safeParse({
     email: formData.get("email"),
   });
@@ -115,6 +124,17 @@ export async function resetPassword(
   _previous: ResetPasswordState,
   formData: FormData,
 ): Promise<ResetPasswordState> {
+  // 5 per 15 minutes by IP. A reset token is 32 random bytes and is not
+  // guessable in five tries — or five million — so this is not really about
+  // brute force. It caps how hard an unauthenticated caller can hammer an
+  // endpoint that does a database round trip and, on a valid token, a 12-round
+  // bcrypt hash.
+  const rate = await limitByIp("resetPassword");
+
+  if (!rate.success) {
+    return { error: rate.message };
+  }
+
   const parsed = resetPasswordSchema.safeParse({
     token: formData.get("token"),
     password: formData.get("password"),
