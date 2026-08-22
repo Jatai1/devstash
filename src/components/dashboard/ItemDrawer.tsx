@@ -4,6 +4,7 @@ import { CalendarDays, FolderOpen, Tag } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { ItemActionBar } from "@/components/dashboard/ItemActionBar";
+import { ItemEditForm } from "@/components/dashboard/ItemEditForm";
 import { TypeIcon } from "@/components/dashboard/TypeIcon";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -44,9 +45,10 @@ interface ItemDrawerProps {
  *
  * A side effect of keying by id is that reopening the *same* item reuses the
  * response instead of refetching, which is what makes a second open instant.
- * Nothing can edit an item yet, so it cannot go stale today — but the feature
- * that adds Favorite, Pin, Edit and Delete has to clear this, or the drawer
- * will keep showing the values from before the edit.
+ * That cache is why `handleSaved` writes the saved item back into it rather
+ * than only leaving edit mode: the drawer would otherwise reopen showing the
+ * values from before the edit. Overwriting beats clearing, since the action
+ * already returned the fresh record and a refetch would only re-ask for it.
  */
 export function ItemDrawer({
   itemId,
@@ -58,6 +60,11 @@ export function ItemDrawer({
     id: string;
     result: FetchResult;
   } | null>(null);
+
+  // Which item is being edited, rather than a bare boolean, for the same reason
+  // the fetch result carries its id: opening a different card must not inherit
+  // the previous one's mode, and comparing ids does that without an effect.
+  const [editingId, setEditingId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!itemId) {
@@ -109,9 +116,28 @@ export function ItemDrawer({
   // A result for a different item is as good as no result: it belongs to the
   // card the user opened before this one.
   const result = fetched?.id === itemId ? fetched.result : null;
+  const isEditing = editingId !== null && editingId === itemId;
+
+  /** Leaves edit mode holding the saved item, so nothing has to be refetched. */
+  function handleSaved(saved: SerializedItemDetail) {
+    setFetched({ id: saved.id, result: { status: "ready", item: saved } });
+    setEditingId(null);
+  }
 
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
+    <Sheet
+      open={open}
+      onOpenChange={(next) => {
+        // Closing mid-edit discards the edit, exactly as Cancel does. Without
+        // this, reopening the same card would land back in a form still holding
+        // what was typed before it was dismissed.
+        if (!next) {
+          setEditingId(null);
+        }
+
+        onOpenChange(next);
+      }}
+    >
       <SheetContent
         side="right"
         // The base component is `sm:max-w-sm`, which is too narrow for a code
@@ -135,14 +161,43 @@ export function ItemDrawer({
           </>
         )}
 
-        {result?.status === "ready" && <DrawerBody item={result.item} />}
+        {result?.status === "ready" && (
+          <DrawerBody
+            item={result.item}
+            isEditing={isEditing}
+            onEdit={() => setEditingId(result.item.id)}
+            onCancelEdit={() => setEditingId(null)}
+            onSaved={handleSaved}
+          />
+        )}
       </SheetContent>
     </Sheet>
   );
 }
 
-/** The loaded item, in the order the design lays it out. */
-function DrawerBody({ item }: { item: SerializedItemDetail }) {
+interface DrawerBodyProps {
+  item: SerializedItemDetail;
+  isEditing: boolean;
+  onEdit: () => void;
+  onCancelEdit: () => void;
+  onSaved: (item: SerializedItemDetail) => void;
+}
+
+/**
+ * The loaded item, in the order the design lays it out.
+ *
+ * The header is shared by both modes — the icon, the type and the language are
+ * not editable, so they do not move when the mode changes. Everything below it
+ * swaps: the action bar and the read-only sections, or the form and its own
+ * Save/Cancel bar in the same position.
+ */
+function DrawerBody({
+  item,
+  isEditing,
+  onEdit,
+  onCancelEdit,
+  onSaved,
+}: DrawerBodyProps) {
   const { type } = item;
 
   return (
@@ -158,8 +213,13 @@ function DrawerBody({ item }: { item: SerializedItemDetail }) {
           </span>
 
           <div className="min-w-0 flex-1 space-y-2">
+            {/* Radix needs exactly one title per sheet, so the heading changes
+                with the mode rather than the form adding a second one. In edit
+                mode the item's own title is a field a few lines below, and
+                repeating it here would be both redundant and immediately
+                stale. */}
             <SheetTitle className="text-lg leading-tight font-semibold">
-              {item.title}
+              {isEditing ? "Edit item" : item.title}
             </SheetTitle>
 
             <div className="flex flex-wrap items-center gap-2">
@@ -172,7 +232,26 @@ function DrawerBody({ item }: { item: SerializedItemDetail }) {
         </div>
       </div>
 
-      <ItemActionBar item={item} />
+      {isEditing ? (
+        <ItemEditForm item={item} onCancel={onCancelEdit} onSaved={onSaved} />
+      ) : (
+        <ViewBody item={item} onEdit={onEdit} />
+      )}
+    </>
+  );
+}
+
+/** Everything below the header in view mode. */
+function ViewBody({
+  item,
+  onEdit,
+}: {
+  item: SerializedItemDetail;
+  onEdit: () => void;
+}) {
+  return (
+    <>
+      <ItemActionBar item={item} onEdit={onEdit} />
 
       <div className="flex-1 space-y-6 overflow-y-auto p-4">
         {item.description && (

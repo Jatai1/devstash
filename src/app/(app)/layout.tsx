@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import { DashboardSidebar } from "@/components/dashboard/DashboardSidebar";
 import { DashboardTopBar } from "@/components/dashboard/DashboardTopBar";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
+import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
 /**
@@ -32,6 +33,14 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
           <DashboardTopBar />
           <div className="flex-1 px-6 py-8">{children}</div>
         </SidebarInset>
+
+        {/*
+          One toast host for every signed-in page. It sits inside the provider
+          rather than in the root layout because only these pages mutate
+          anything — the `(auth)` forms report inline, next to the field that
+          failed.
+        */}
+        <Toaster position="bottom-right" />
       </SidebarProvider>
     </TooltipProvider>
   );
