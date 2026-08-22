@@ -7,6 +7,7 @@ import { isEmailVerificationEnabled } from "@/lib/email-verification";
 import { sendVerificationEmail } from "@/lib/email/send-verification-email";
 import { hashPassword } from "@/lib/password";
 import { prisma } from "@/lib/prisma";
+import { limitByIp } from "@/lib/rate-limit";
 import { createVerificationToken } from "@/lib/verification-tokens";
 
 /**
@@ -17,8 +18,29 @@ import { createVerificationToken } from "@/lib/verification-tokens";
  * `/api/auth/*`. Registration is a route handler rather than a Server Action
  * because it is a public endpoint that later clients (and the phase 3 form)
  * post to directly.
+ *
+ * Being a real route rather than a Server Action, this is the only one of the
+ * five rate-limited entry points that can answer with an HTTP status and a
+ * `Retry-After` header. The four actions report their limit through the state
+ * their forms already render.
  */
 export async function POST(request: Request) {
+  // Before the body is read at all: the key is the IP, so nothing in the
+  // request is needed to decide this, and a throttled caller should not get to
+  // hand us a payload to parse. Registration also creates rows and sends mail,
+  // which makes it the most expensive thing here to leave uncapped.
+  const rate = await limitByIp("register");
+
+  if (!rate.success) {
+    return NextResponse.json(
+      { error: rate.message },
+      {
+        status: 429,
+        headers: { "Retry-After": String(rate.retryAfterSeconds) },
+      },
+    );
+  }
+
   let body: unknown;
 
   try {
