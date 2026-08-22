@@ -1,16 +1,43 @@
-# Current Feature
+# Current Feature: Delete an Item
 
 ## Status
 
-Complete
+In Progress
 
 ## Goals
 
-<!-- Bullet points of what success looks like -->
+- A signed-in user can permanently delete one of their own items from the item detail drawer, replacing the currently `disabled` Trash button in `ItemActionBar`.
+- Deleting asks for confirmation first, through a shadcn `alert-dialog`, so a stray click on a destructive icon button cannot destroy an item.
+- A successful delete raises a sonner toast — the `<Toaster />` is already mounted in the `(app)` layout — closes the drawer, and removes the card from the list behind it without a manual reload.
+- The write is scoped so one user can never delete another's item, and a missing item and someone else's item are answered identically.
+- Both pages that render items — `/dashboard` and `/items/[slug]` — are up to date afterwards.
+- Unit tests cover the new Server Action and the new query function, per the project's Vitest scope.
 
 ## Notes
 
-<!-- Additional context, constraints, or details from the spec -->
+**Scope.** Delete only. Favorite and Pin stay disabled in the action bar, there is still no way to create an item, and collection membership stays display-only. This is the second item mutation in the project, after the drawer's edit mode.
+
+**No migration and no schema change.** `ItemCollection.item` and `ItemTag.item` both declare `onDelete: Cascade`, so removing an `Item` row removes its collection and tag joins in the database. `Tag` rows themselves survive their last `ItemTag`, which is the same deliberate orphan the edit feature left — nothing reads it and a future tag picker would want the history.
+
+**One new shadcn component: `alert-dialog`.** It is not currently in `src/components/ui/` — it was added for the profile page's delete-account dialog and removed when that page was restructured into its own route, which is why the ui directory has no orphan today. Watch the CLI: adding `sonner` previously pulled in `next-themes` as a side effect, which had to be uninstalled and the generated component rewritten to `theme="dark"`.
+
+**Where the confirmation lives is a `start` decision.** The precedent in the repo is `DeleteAccountForm`, which deliberately dropped its dialog for a whole page, since navigating to a page that does nothing else *is* the "are you sure" step. That reasoning does not transfer here — a drawer over the dashboard has no equivalent page — and the user asked for a shadcn confirmation, so this is a dialog. What is still open is whether it nests inside the `Sheet` (Radix supports it, but two stacked modals both manage focus) or replaces the drawer's body the way edit mode does.
+
+**Destructive ordering convention.** On a destructive form the safe choice takes the first position — Cancel leads, the destructive button follows. `ChangePasswordForm.tsx` documents the rule and the asymmetry with non-destructive forms.
+
+**Authorization is the `where` clause, not a preceding read.** The delete must be one `deleteMany({ where: { id, userId } })` whose `count` *is* the authorization result, matching `updateItem` in `src/lib/db/items.ts`. A `findUnique` ownership check followed by a `delete` leaves a window between them. The action re-derives the user from `auth()` and never takes an id or user from the client as anything but the item id to scope.
+
+**Return shape.** The flat `error` / `message` state every action in `src/actions/items.ts` and `src/actions/profile.ts` returns — not a `{ success, data, error }` wrapper, which `context/coding-standards.md` names specifically. Like `updateItem`, this is called with a plain id from a controlled client component rather than through `useActionState`, so the *signature* takes `(itemId)` while the *return* keeps the project shape.
+
+**Revalidation.** `getItemEditContext(userId, itemId)` already returns the item's `typeSlug`, so the action can read it before the delete and revalidate `/dashboard` and `/items/${typeSlug}` after, exactly as `updateItem` does. Both pages are `force-dynamic`, so this is about the client-side Router Cache, not the Full Route Cache. Read it *before* the delete — the row is gone afterwards.
+
+**The drawer's id-keyed fetch cache.** `ItemDrawer` stores its fetch result keyed by item id and reuses it when the same item is reopened. The edit feature had to overwrite that entry on save; delete must make sure a deleted id cannot be served from it, and `ItemList`'s `selectedId` must not keep pointing at a row that no longer exists.
+
+**Error reporting is a `start` decision.** The user asked for a toast on *success*. Every existing form in the project reports failures inline, next to what caused them; a delete that fails has a dialog still on screen to report into. Whether a failure is also a toast should be settled before building rather than assumed either way.
+
+**Testing.** Vitest covers Server Actions and utilities only — a test under `src/components/` silently never runs. Add cases to `src/actions/items.test.ts` (no session, a session naming a deleted row, another user's item, a failed transaction) and `src/lib/db/items.test.ts` (that the `where` carries both `id` and `userId`, and that a count of 0 is reported as not-found). The drawer and the dialog are verified in the browser.
+
+**Verification will destroy real rows.** The development branch holds the seeded 18 items; anything deleted to prove this works has to be re-seeded or recreated. Per the standing rule, show what will be deleted and wait for approval before running anything destructive against the database.
 
 ## History
 
@@ -382,3 +409,4 @@ Complete
 - Feature complete — `npx tsc --noEmit`, `npm run lint`, `npm test` and `npm run build` all pass, with the route list unchanged. Committed as `feat: add edit mode to the item drawer` and merged into `main` with `--no-ff`, then the branch was deleted
 - Known and deliberately left: a `Tag` row outlives its last `ItemTag`, so removing a tag from the only item using it leaves an orphan. Nothing reads it today and a future tag picker would want exactly that history, so no sweep was added; the one orphan the verification created (`timing`) was deleted from the development branch by hand, leaving the seeded 18 tags and 40 links intact. Two seeded items also carry a `updatedAt` of the verification date rather than the seed's
 - Still open, unchanged by this feature: Favorite, Pin and Delete are still disabled in the drawer's action bar, and collection membership is still display-only; there is still no way to *create* an item; `/collections` and `/collections/[id]` still 404; `/profile` still has no way to edit a name or avatar; expired verification and reset tokens are still never swept; a signed-in user visiting `/sign-in` still sees the form; rate limiting is inert on every deployed environment until the Upstash variables are added there; `EMAIL_FROM` still needs a domain verified in Resend; and the Vercel Production/Preview environment variables have still never been checked
+- Loaded item deletion as an inline description — the drawer's disabled Trash button, a shadcn confirmation and a success toast — and set the current feature to it. Loading it surfaced one thing that needs installing, two decisions for `start` and four constraints that are already settled by the codebase: `alert-dialog` is **not** in `src/components/ui/` (it was added for the profile page's delete-account dialog and removed when that page became its own route), while `sonner` and its `<Toaster />` in the `(app)` layout are already there, so the toast half needs nothing new; the open decisions are whether the confirmation nests inside the drawer's `Sheet` or replaces its body the way edit mode does, and whether a *failed* delete reports inline (the project's convention everywhere else) or as a toast; and the settled constraints are that no migration is needed because `ItemCollection` and `ItemTag` both cascade on `itemId`, that the write must be one `deleteMany({ where: { id, userId } })` whose count is the authorization result rather than a read-then-delete, that `getItemEditContext` already returns the `typeSlug` the revalidation needs but must be called *before* the row is gone, and that `ItemDrawer`'s id-keyed fetch cache — the one the edit feature had to overwrite on save — must not be able to serve a deleted item back

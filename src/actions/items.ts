@@ -5,6 +5,7 @@ import { z } from "zod";
 
 import { auth } from "@/auth";
 import {
+  deleteItem as deleteItemRow,
   getItemEditContext,
   serializeItemDetail,
   updateItem as updateItemRow,
@@ -138,4 +139,67 @@ export async function updateItem(
     message: "Changes saved.",
     item: serializeItemDetail(item),
   };
+}
+
+export interface DeleteItemState {
+  /** Whole-form failure, rendered inside the confirmation dialog. */
+  error?: string;
+  /** Shown on success. */
+  message?: string;
+}
+
+/**
+ * Permanently deletes one item the signed-in user owns.
+ *
+ * There is nothing to validate — the only input is an id, and the `where` on
+ * the delete is what decides whether it names anything this caller may touch —
+ * so the state has no `fieldErrors`. It keeps the project's flat shape all the
+ * same, since the dialog renders `error` exactly as every other form does.
+ *
+ * Hard delete, matching the assumption in `docs/item-crud-architecture.md`:
+ * `Item` has no `deletedAt` and nothing in the app filters on one, so a soft
+ * delete would be a column every existing query would have to learn about.
+ */
+export async function deleteItem(itemId: string): Promise<DeleteItemState> {
+  const userId = await currentUserId();
+
+  if (!userId) {
+    return { error: NO_SESSION };
+  }
+
+  // Read the slug *before* the row is gone — it is the `/items/[slug]` page
+  // that has to be revalidated, and only the item knows which one that is.
+  // Like the same call in `updateItem`, this is not the ownership check; the
+  // delete below scopes itself.
+  const context = await getItemEditContext(userId, itemId);
+
+  if (!context) {
+    return { error: NOT_FOUND };
+  }
+
+  let deleted: boolean;
+
+  try {
+    deleted = await deleteItemRow(userId, itemId);
+  } catch (error) {
+    // Reported rather than thrown: an error boundary would replace the drawer
+    // the dialog is sitting in, which is a worse answer than a sentence.
+    console.error("Item delete failed", error);
+
+    return { error: "Could not delete this item just now. Try again." };
+  }
+
+  // Deleted between the read above and the write. Rare, but the count is the
+  // authorization result and it says this user has no such item.
+  if (!deleted) {
+    return { error: NOT_FOUND };
+  }
+
+  // Both pages are `force-dynamic`, so this is the client-side Router Cache
+  // rather than the Full Route Cache: without it, navigating back to a page
+  // already visited this session would still show the deleted card.
+  revalidatePath("/dashboard");
+  revalidatePath(`/items/${context.typeSlug}`);
+
+  return { message: "Item deleted." };
 }

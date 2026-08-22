@@ -27,6 +27,8 @@ interface ItemDrawerProps {
   itemId: string | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** Fired once an item has been deleted — see the call site in `ItemList`. */
+  onDeleted: (itemId: string) => void;
   /** Where focus goes on close — see the call site in `ItemList`. */
   onCloseAutoFocus?: (event: Event) => void;
 }
@@ -49,11 +51,18 @@ interface ItemDrawerProps {
  * than only leaving edit mode: the drawer would otherwise reopen showing the
  * values from before the edit. Overwriting beats clearing, since the action
  * already returned the fresh record and a refetch would only re-ask for it.
+ *
+ * **Delete leaves the entry alone on purpose.** Clearing it here would strand
+ * the drawer on its skeleton if the same id were ever opened again, because the
+ * fetch effect keys on `itemId` alone and would not re-run for an id that had
+ * not changed. The entry is unreachable instead: `ItemList` drops the deleted
+ * card the moment the row is gone, so there is nothing left to click.
  */
 export function ItemDrawer({
   itemId,
   open,
   onOpenChange,
+  onDeleted,
   onCloseAutoFocus,
 }: ItemDrawerProps) {
   const [fetched, setFetched] = useState<{
@@ -168,6 +177,7 @@ export function ItemDrawer({
             onEdit={() => setEditingId(result.item.id)}
             onCancelEdit={() => setEditingId(null)}
             onSaved={handleSaved}
+            onDeleted={onDeleted}
           />
         )}
       </SheetContent>
@@ -181,6 +191,7 @@ interface DrawerBodyProps {
   onEdit: () => void;
   onCancelEdit: () => void;
   onSaved: (item: SerializedItemDetail) => void;
+  onDeleted: (itemId: string) => void;
 }
 
 /**
@@ -197,6 +208,7 @@ function DrawerBody({
   onEdit,
   onCancelEdit,
   onSaved,
+  onDeleted,
 }: DrawerBodyProps) {
   const { type } = item;
 
@@ -235,7 +247,7 @@ function DrawerBody({
       {isEditing ? (
         <ItemEditForm item={item} onCancel={onCancelEdit} onSaved={onSaved} />
       ) : (
-        <ViewBody item={item} onEdit={onEdit} />
+        <ViewBody item={item} onEdit={onEdit} onDeleted={onDeleted} />
       )}
     </>
   );
@@ -245,13 +257,19 @@ function DrawerBody({
 function ViewBody({
   item,
   onEdit,
+  onDeleted,
 }: {
   item: SerializedItemDetail;
   onEdit: () => void;
+  onDeleted: (itemId: string) => void;
 }) {
   return (
     <>
-      <ItemActionBar item={item} onEdit={onEdit} />
+      <ItemActionBar
+        item={item}
+        onEdit={onEdit}
+        onDeleted={() => onDeleted(item.id)}
+      />
 
       <div className="flex-1 space-y-6 overflow-y-auto p-4">
         {item.description && (

@@ -173,11 +173,13 @@ export function serializeItemDetail(item: ItemDetail): SerializedItemDetail {
 }
 
 /**
- * What an edit needs to know about an item before it can validate one.
+ * What a mutation needs to know about an item before it touches one.
  *
- * `contentType` picks the schema, and the slug is what the action revalidates —
- * both of them properties of the stored row rather than of the submission, which
- * is the point: neither can be influenced by what the client sends.
+ * `contentType` picks the schema an edit validates against, and the slug is what
+ * both edit and delete revalidate — both of them properties of the stored row
+ * rather than of the submission, which is the point: neither can be influenced
+ * by what the client sends. Delete reads it only for the slug, and has to read
+ * it before the row is gone.
  */
 export interface ItemEditContext {
   contentType: ItemContentKind;
@@ -281,6 +283,26 @@ export async function updateItem(
   // caller renders type, tags and collections too, and only the row knows the
   // `updatedAt` Postgres just set.
   return getItem(userId, id);
+}
+
+/**
+ * Deletes one item, reporting whether this user actually had it.
+ *
+ * Scoped in the `where` for the same reason `updateItem` is: a wrong owner
+ * deletes 0 rows, and that count *is* the authorization result, with no window
+ * between an ownership check and the write. A `findUnique` followed by
+ * `delete({ where: { id } })` would have one.
+ *
+ * Nothing is cleaned up by hand. `ItemCollection.item` and `ItemTag.item` both
+ * declare `onDelete: Cascade`, so the join rows go with the item in the same
+ * statement. The `Tag` rows themselves are left alone deliberately — a tag
+ * outliving its last item is the same orphan an edit leaves when it drops a
+ * name, and a future tag picker would want exactly that history.
+ */
+export async function deleteItem(userId: string, id: string): Promise<boolean> {
+  const { count } = await prisma.item.deleteMany({ where: { id, userId } });
+
+  return count > 0;
 }
 
 export interface ItemStats {

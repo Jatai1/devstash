@@ -13,6 +13,7 @@ vi.mock("@/lib/prisma", () => ({
       findMany: vi.fn(),
       count: vi.fn(),
       updateMany: vi.fn(),
+      deleteMany: vi.fn(),
     },
     tag: { upsert: vi.fn() },
     itemTag: { deleteMany: vi.fn(), createMany: vi.fn() },
@@ -21,6 +22,7 @@ vi.mock("@/lib/prisma", () => ({
 
 const { prisma } = await import("@/lib/prisma");
 const {
+  deleteItem,
   getItem,
   getItemEditContext,
   serializeItemDetail,
@@ -326,6 +328,47 @@ describe("updateItem", () => {
       expect.objectContaining({ where: { id: ITEM_ID, userId: USER_ID } }),
     );
     expect(item?.title).toBe("Renamed");
+  });
+});
+
+describe("deleteItem", () => {
+  it("scopes the delete to the owner in the `where`", async () => {
+    vi.mocked(prisma.item.deleteMany).mockResolvedValue({ count: 1 } as never);
+
+    await deleteItem(USER_ID, ITEM_ID);
+
+    // Both keys in one statement. A `findFirst` ownership check followed by a
+    // `delete({ where: { id } })` would leave a window between them; here the
+    // count *is* the authorization result.
+    expect(prisma.item.deleteMany).toHaveBeenCalledWith({
+      where: { id: ITEM_ID, userId: USER_ID },
+    });
+  });
+
+  it("reports true when a row was removed", async () => {
+    vi.mocked(prisma.item.deleteMany).mockResolvedValue({ count: 1 } as never);
+
+    expect(await deleteItem(USER_ID, ITEM_ID)).toBe(true);
+  });
+
+  it("reports false when the item is missing or belongs to someone else", async () => {
+    // The two cases are indistinguishable on purpose — a caller guessing ids
+    // learns nothing about which ones exist.
+    vi.mocked(prisma.item.deleteMany).mockResolvedValue({ count: 0 } as never);
+
+    expect(await deleteItem(USER_ID, ITEM_ID)).toBe(false);
+  });
+
+  it("leaves the join rows to the database", async () => {
+    vi.mocked(prisma.item.deleteMany).mockResolvedValue({ count: 1 } as never);
+
+    await deleteItem(USER_ID, ITEM_ID);
+
+    // `ItemCollection.item` and `ItemTag.item` both declare `onDelete: Cascade`,
+    // so cleaning up by hand would be a second statement doing what the first
+    // already did — and one more chance to leave the two out of step.
+    expect(prisma.itemTag.deleteMany).not.toHaveBeenCalled();
+    expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 });
 
