@@ -1,16 +1,59 @@
-# Current Feature
+# Current Feature: Items List View
 
 ## Status
 
-Not Started
+In Progress
 
 ## Goals
 
-<!-- Bullet points of what success looks like -->
+- A dynamic route under `/items/[…]` renders the items of one item type, resolved from the URL segment
+- Items are filtered by type **and** scoped to the signed-in user, read from the database through `src/lib/db/`
+- The page renders a responsive grid of `ItemCard`s — one column by default, two from `md` up
+- Each card keeps the left border coloured by its item type, as on the dashboard
+- An unknown type segment 404s rather than rendering an empty grid
+- An empty-but-valid type renders an empty state, the way `RecentCollections` and the item lists already do
+- `npx tsc --noEmit`, `npm run lint` and `npm run build` all pass, and the route is verified in the browser against the seeded data
 
 ## Notes
 
-<!-- Additional context, constraints, or details from the spec -->
+Source spec: `context/features/item-list-view-spec.md`.
+
+**The spec's `[type]` should be `[slug]`.** Every existing link into this route already
+builds `/items/${type.slug}` — `SidebarTypeNav.tsx:53` and `ProfileStats.tsx:55` — and
+`ItemType` carries a dedicated `slug` column documented in `src/lib/db/item-types.ts` as
+"route segment behind `/items/[slug]`". Naming the param `[type]` would work at runtime
+but would contradict the schema comment and the two call sites, so the route folder
+should be `src/app/(app)/items/[slug]/`.
+
+This is the first of the three routes that have been 404ing since the dashboard was
+built (`/items/[slug]`, `/collections`, `/collections/[id]`); the other two stay out of
+scope.
+
+Existing pieces this should reuse rather than reinvent:
+
+- `ItemCard` (`src/components/dashboard/ItemCard.tsx`) already takes an `ItemSummary`
+  with a non-null `type` and renders the type-coloured left border — no new card needed
+- `src/lib/db/items.ts` has a private `findItems(where, take?)` behind `getPinnedItems`
+  and `getRecentItems`; a type-filtered query belongs there alongside them
+- `src/lib/db/item-types.ts` owns `ItemTypeSummary` and `ITEM_TYPE_SELECT`, and is where
+  a slug lookup belongs
+- `getCurrentUserId()` in `src/lib/db/user.ts` resolves the session, so scoping is one call
+- The page belongs in the `(app)` route group so it inherits the sidebar and top bar
+
+Constraints carried over from the project:
+
+- `src/proxy.ts`'s matcher is `/dashboard/:path*` and `/profile/:path*`, so **`/items/*`
+  would be public** unless the matcher grows a third entry. Decide this during `start`:
+  the page reads the session through `getCurrentUserId()`, which throws by design when
+  there is none, so without the matcher entry an anonymous visit is an error page rather
+  than a redirect to sign-in.
+- `params` is a Promise and the props type is the generated global `PageProps<"/items/[slug]">`,
+  which only exists after `next dev`/`next build` regenerates the route types
+- Add `export const dynamic = "force-dynamic"` as `/dashboard` does, so the build does
+  not prerender one snapshot of the database
+- The components live under `src/components/dashboard/`, whose prefix is already noted as
+  misleading now that `/profile` uses the same shell — reusing them here is fine, renaming
+  the directory is not part of this feature
 
 ## History
 
@@ -314,3 +357,4 @@ Not Started
 - The database was left untouched throughout (3 users, 0 tokens), every test used RFC 5737 documentation IPs, and all rate-limit keys were deleted from Upstash afterwards by explicit approval, leaving that namespace empty
 - **Rate limiting is inert on every deployed environment**: `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN` exist only in the local `.env`, and adding them to Vercel Production and Preview is what turns the feature on. Because the module fails open, nothing will error there — it will simply enforce nothing, silently
 - Still open, unchanged by this feature: `/items/[slug]`, `/collections` and `/collections/[id]` all 404; `/profile` still has no way to edit a name or avatar; expired verification and reset tokens are still never swept and do not cascade when a user is deleted; a signed-in user visiting `/sign-in` still sees the form; `EMAIL_FROM` still needs a domain verified in Resend before real users sign up; and the Vercel Production/Preview environment variables have still never been checked
+- Loaded `context/features/item-list-view-spec.md` and set the current feature to the items list view — the first of the three routes that have 404ed since the dashboard was built. Loading it surfaced one contradiction with the codebase: the spec names the route `/items/[type]`, but both existing links (`SidebarTypeNav`, `ProfileStats`) build `/items/${type.slug}` and `ItemType` has a dedicated `slug` column, so the segment should be `[slug]`. It also surfaced one decision the spec does not mention — `src/proxy.ts`'s matcher covers only `/dashboard/:path*` and `/profile/:path*`, so `/items/*` is public until it gains a third entry, and `getCurrentUserId()` throws rather than redirecting for an anonymous visitor
