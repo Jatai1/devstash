@@ -19,14 +19,43 @@ npm run build    # production build; type checks via project-local tsc and fails
 npm run start    # serve the production build (requires a prior build)
 npm run lint     # bare `eslint` — flat config discovers files itself, no path args
 npx tsc --noEmit # same type check as the build, without the bundling
+npm test         # Vitest, one pass (`npm run test:watch` to watch)
 ```
 
 `next lint` was removed in Next.js 16 and **`next build` no longer runs ESLint**, so
 lint is a separate step that CI/`build` will not catch for you. `npx tsc --noEmit` is
 the fast pre-check; the build repeats it.
 
-There is no test framework installed. Do not invent one or assume a runner exists — if
-tests are needed, ask which one to add first.
+### Vitest covers Server Actions and utilities, never components
+
+`vitest.config.ts` scopes `include` to `src/actions/**/*.test.ts` and
+`src/lib/**/*.test.ts`, so **a test file placed anywhere else — `src/components/` above
+all — silently never runs.** That is the enforcement of a deliberate decision, not an
+oversight: the components here are mostly async server components that read the
+database, so a rendering test would need either a live connection or a mock of every
+query behind it, and would assert about markup that changes with every design pass.
+Components are verified in the browser, which is what step 4 of the workflow in
+`context/ai-interaction.md` means.
+
+Tests sit beside what they test (`src/lib/tokens.ts` → `src/lib/tokens.test.ts`),
+`globals` is off so `describe`/`it`/`expect`/`vi` are imported explicitly, and the
+config carries three things worth knowing before writing a test:
+
+- **`server-only` is stubbed by an inline plugin.** `src/lib/rate-limit.ts` and the
+  three `src/lib/email/` modules import it, and its real entry point throws unless
+  resolved under Node's `react-server` condition — which Next sets and Vitest does not.
+  Without the stub, importing any of those modules fails on the import alone. This is
+  the same condition problem `tsx` scripts hit, where the workaround is
+  `NODE_OPTIONS="--conditions=react-server"`.
+- **`clearMocks` is on as well as `restoreMocks`.** `restoreMocks` only reaches spies
+  made with `vi.spyOn`, so without `clearMocks` the call history of the `vi.fn()` mocks
+  a `vi.mock` factory returns leaks from one test into the next.
+- **`@/` is aliased manually** to mirror `tsconfig.json`'s one `paths` entry, rather
+  than adding `vite-tsconfig-paths`.
+
+Unit tests never open a connection: `@/lib/prisma`, `@/auth` and `@/lib/password` are
+mocked (bcrypt at 12 rounds costs a few hundred ms per call), and `npm run test:db`
+remains the separate check that the real database works.
 
 ### Database commands
 

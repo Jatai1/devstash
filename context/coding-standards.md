@@ -119,6 +119,26 @@ Example v4 configuration:
   `src/components/ui/`; adding one is a decision, not an assumption. Do not write
   a spec or an action that depends on a toast until it exists.
 
+## Testing
+
+- Vitest, run with `npm test` (`npm run test:watch` while working)
+- **Unit tests cover Server Actions (`src/actions/`) and utilities (`src/lib/`) only.**
+  Components are verified in the browser; `vitest.config.ts` scopes `include` to those
+  two directories, so a test placed anywhere else silently never runs
+- Test files sit beside the module they cover: `src/lib/tokens.ts` →
+  `src/lib/tokens.test.ts`
+- Import `describe`/`it`/`expect`/`vi` explicitly — `globals` is off
+- Mock at the boundary, not inside the logic. `@/lib/prisma`, `@/auth` and
+  `@/lib/password` are mocked with `vi.mock`; validation, session checks and the
+  returned state shape are exercised for real
+- `@/lib/password` is mocked for speed as much as isolation — bcrypt at 12 rounds costs
+  a few hundred milliseconds per call
+- Assert on the flat state object an action returns (`error`, `fieldErrors`, `message`),
+  since that is exactly what `useActionState` hands the form
+- Cover the security decision, not just the happy path: a Server Action is a public
+  endpoint, so every action has a "no session" and a "session names a deleted row" case
+  worth pinning down
+
 ## Code Quality
 
 - No commented-out code unless specified
