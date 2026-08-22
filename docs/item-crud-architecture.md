@@ -301,19 +301,16 @@ the **client-side Router Cache**, which would otherwise serve a stale list when 
 navigates back to a page they already visited in this session. A sidebar count that
 lags one item behind is exactly this bug.
 
-### Return shape — a conflict to resolve
+### Return shape — resolved
 
-`context/coding-standards.md` says *"Return `{ success, data, error }` pattern from
-actions."* **No action in the codebase does this.** `ChangePasswordState`,
-`DeleteAccountState` and `SignInState` are all flat objects carrying
-`error?` / `fieldErrors?` / `message?`, because that is what `useActionState` renders
-directly.
+This section originally flagged a conflict: `context/coding-standards.md` mandated a
+`{ success, data, error }` wrapper that **no action in the codebase used**. The
+recommendation was to follow the code rather than the doc, since a wrapper would make
+every form unwrap a level for no gain.
 
-`context/ai-interaction.md` says *"Preserve existing patterns in the codebase."*
-**Recommendation: follow the code, not the standards doc**, and update the standards
-doc to describe what is actually there. A `{ success, data, error }` wrapper would make
-every form unwrap a level for no gain, and would make this the only inconsistent
-action file.
+**The standards doc has since been changed** to describe the flat shape, so there is no
+longer a conflict to resolve — `src/actions/items.ts` should return a flat state object
+like every existing action.
 
 ```ts
 export interface ItemFormState {
@@ -497,7 +494,7 @@ sheet, sidebar, skeleton, tooltip`.
 | `textarea` | `content` on all four TEXT types |
 | `select` | language picker, collection picker |
 | `dialog` | delete confirmation (or reuse `sheet`) |
-| `sonner` | **`context/coding-standards.md` mandates toast notifications for errors — no toast library is installed at all** |
+| `sonner` | *Optional now.* The standards doc used to mandate toasts for errors; it now specifies inline errors, which every existing form already renders. A toast is a deliberate addition, not a prerequisite. |
 | `checkbox` / `switch` | pin and favorite in the form |
 
 Add with `npx shadcn@latest add textarea select sonner checkbox`. Note
@@ -566,9 +563,9 @@ workflow.
 ## 11. Open questions
 
 - ~~**`[type]` or `[slug]`?**~~ **Resolved: `[slug]`.** The segment carries a slug, the column is called `slug`, and `SidebarTypeNav` and `ProfileStats` both already built `/items/${type.slug}`.
-- **Return shape** — reconcile `{ success, data, error }` in the standards doc against
-  the flat `useActionState` shape every existing action uses (§5). Recommendation:
-  change the doc.
+- ~~**Return shape** — reconcile `{ success, data, error }` in the standards doc against
+  the flat `useActionState` shape every existing action uses (§5).~~ **Resolved: the
+  standards doc now documents the flat shape.**
 - **Markdown editor and syntax highlighter** — neither is chosen or installed (§8).
 - **Tags** — free-text with get-or-create per submit, or a picker over existing tags?
   `Tag` is per-user with `@@unique([userId, name])`, so get-or-create must be an

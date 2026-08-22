@@ -46,6 +46,7 @@ Example v4 configuration:
 @theme {
   --color-primary: oklch(50% 0.2 250);
 }
+```
 
 ## File Organization
 
@@ -86,12 +87,40 @@ Example v4 configuration:
 ## Error Handling
 
 - Use try/catch in Server Actions
-- Return `{ success, data, error }` pattern from actions
-- Display user-friendly error messages via toast
+- Return a **flat state object** from actions, shaped for `useActionState`:
+
+  ```ts
+  export interface SomethingState {
+    /** Whole-form failure, rendered above the fields. */
+    error?: string;
+    /** Field-keyed messages, so the form can mark the offending input. */
+    fieldErrors?: Partial<Record<"fieldName", string[]>>;
+    /** Shown on success. */
+    message?: string;
+  }
+  ```
+
+  Not a `{ success, data, error }` wrapper. `useActionState` hands the returned
+  object straight to the form, so a wrapper would only make every form unwrap a
+  level before it could render anything. Every action in `src/actions/` uses the
+  flat shape: `SignInState`, `ResendState`, `ForgotPasswordState`,
+  `ResetPasswordState`, `ChangePasswordState`, `DeleteAccountState`.
+
+- Add a **`succeededAt?: number`** when the form resets itself on success. An
+  effect needs a value that *changes* between two consecutive successes, and
+  `message` is the same string every time — see `ChangePasswordState`
+  (`src/actions/profile.ts`) for the bug this fixes.
+
+- Build field errors with `z.flattenError(parsed.error).fieldErrors` — the Zod 4
+  spelling. `error.flatten()` is the deprecated Zod 3 method.
+
+- Display errors **inline**, in the form's own error slot, next to the input that
+  caused them. There is no toast library installed and no `toast` component in
+  `src/components/ui/`; adding one is a decision, not an assumption. Do not write
+  a spec or an action that depends on a toast until it exists.
 
 ## Code Quality
 
 - No commented-out code unless specified
 - No unused imports or variables
 - Keep functions under 50 lines when possible
-```
