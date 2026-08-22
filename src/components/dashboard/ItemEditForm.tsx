@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import type { SerializedItemDetail } from "@/lib/db/items";
-import { parseTagInput, type ItemUpdateField } from "@/lib/item-schemas";
+import { parseTagInput, type ItemField } from "@/lib/item-schemas";
 
 interface ItemEditFormProps {
   item: SerializedItemDetail;
@@ -83,7 +83,7 @@ export function ItemEditForm({ item, onCancel, onSaved }: ItemEditFormProps) {
     });
   }
 
-  function errorsFor(field: ItemUpdateField) {
+  function errorsFor(field: ItemField) {
     return state.fieldErrors?.[field];
   }
 

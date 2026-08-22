@@ -14,6 +14,7 @@ vi.mock("@/lib/prisma", () => ({
       count: vi.fn(),
       updateMany: vi.fn(),
       deleteMany: vi.fn(),
+      create: vi.fn(),
     },
     tag: { upsert: vi.fn() },
     itemTag: { deleteMany: vi.fn(), createMany: vi.fn() },
@@ -22,6 +23,7 @@ vi.mock("@/lib/prisma", () => ({
 
 const { prisma } = await import("@/lib/prisma");
 const {
+  createItem,
   deleteItem,
   getItem,
   getItemEditContext,
@@ -230,6 +232,89 @@ describe("getItemEditContext", () => {
         where: { id: ITEM_ID, userId: "someone_else" },
       }),
     );
+  });
+});
+
+describe("createItem", () => {
+  const FIELDS = {
+    title: "useAuth",
+    description: null,
+    itemTypeId: "type_snippet",
+    contentType: "TEXT" as const,
+  };
+
+  beforeEach(() => {
+    vi.mocked(prisma.$transaction).mockImplementation((run) =>
+      (run as (tx: typeof prisma) => Promise<unknown>)(prisma),
+    );
+
+    vi.mocked(prisma.item.create).mockResolvedValue({ id: ITEM_ID } as never);
+    vi.mocked(prisma.tag.upsert).mockImplementation(
+      (async ({ create }: { create: { name: string } }) => ({
+        id: `tag_${create.name}`,
+      })) as never,
+    );
+    resolvesTo(row());
+  });
+
+  /**
+   * There is no ownership check to make — the row does not exist yet — so
+   * `userId` is written rather than matched. The type it is filed under was
+   * authorized by `getCreatableItemType` before this was called.
+   */
+  it("writes the owner onto the new row", async () => {
+    await createItem(USER_ID, FIELDS, []);
+
+    expect(prisma.item.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: { ...FIELDS, userId: USER_ID },
+      }),
+    );
+  });
+
+  it("upserts each tag for this user and joins them to the item", async () => {
+    await createItem(USER_ID, FIELDS, ["react", "hooks"]);
+
+    // `@@unique([userId, name])` is what makes the upsert idempotent per user:
+    // one person's "react" is never another's.
+    expect(prisma.tag.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { userId_name: { userId: USER_ID, name: "react" } },
+        create: { userId: USER_ID, name: "react" },
+        update: {},
+      }),
+    );
+
+    expect(prisma.itemTag.createMany).toHaveBeenCalledWith({
+      data: [
+        { itemId: ITEM_ID, tagId: "tag_react" },
+        { itemId: ITEM_ID, tagId: "tag_hooks" },
+      ],
+    });
+  });
+
+  it("issues no join statement when there are no tags", async () => {
+    await createItem(USER_ID, FIELDS, []);
+
+    // `createMany` with an empty array is a statement that does nothing.
+    expect(prisma.itemTag.createMany).not.toHaveBeenCalled();
+  });
+
+  it("does all of it in one transaction", async () => {
+    await createItem(USER_ID, FIELDS, ["react"]);
+
+    // Otherwise a failure part-way could leave an item with no tags, which is
+    // indistinguishable from one deliberately created without any.
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+  });
+
+  it("re-reads the item as the owner, so the caller gets the stored timestamps", async () => {
+    const item = await createItem(USER_ID, FIELDS, []);
+
+    expect(prisma.item.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: ITEM_ID, userId: USER_ID } }),
+    );
+    expect(item?.id).toBe(ITEM_ID);
   });
 });
 

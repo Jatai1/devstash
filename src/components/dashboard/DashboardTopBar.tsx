@@ -1,14 +1,24 @@
-import { FolderPlus, Plus, Search } from "lucide-react";
+import { FolderPlus, Search } from "lucide-react";
 
+import { NewItemDialog } from "@/components/dashboard/NewItemDialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SidebarTrigger } from "@/components/ui/sidebar";
+import { getCreatableItemTypes } from "@/lib/db/item-types";
+import { getCurrentUserId } from "@/lib/db/user";
 
 /**
  * Top bar of the dashboard shell.
  *
- * The trigger opens and closes the sidebar; the search field and action
- * buttons are still display only.
+ * The trigger opens and closes the sidebar; the search field and New Collection
+ * are still display only. New Item opens the create dialog, which owns its own
+ * trigger so this component can stay a server component and load the type list
+ * for it.
+ *
+ * It renders on every page in the `(app)` shell, so New Item is reachable from
+ * `/profile` as well as the item pages. That is what living in the shared shell
+ * already meant for the button; moving it is a restructure, not part of adding
+ * the dialog behind it.
  *
  * Both action buttons collapse to their icon when the bar is narrow. A
  * `Button` is `shrink-0`, so at phone widths the two full labels and the
@@ -24,7 +34,10 @@ import { SidebarTrigger } from "@/components/ui/sidebar";
  * padding and gaps cost ~342px, so `@xl` (576px) leaves the search a usable
  * ~230px at the point they appear.
  */
-export function DashboardTopBar() {
+export async function DashboardTopBar() {
+  const userId = await getCurrentUserId();
+  const types = await getCreatableItemTypes(userId);
+
   return (
     <header className="@container flex h-14 shrink-0 items-center gap-3 border-b border-border px-4">
       <SidebarTrigger />
@@ -59,10 +72,7 @@ export function DashboardTopBar() {
           <FolderPlus />
           <span className="sr-only @xl:not-sr-only">New Collection</span>
         </Button>
-        <Button size="lg">
-          <Plus />
-          <span className="sr-only @xl:not-sr-only">New Item</span>
-        </Button>
+        <NewItemDialog types={types} />
       </div>
     </header>
   );
