@@ -1,76 +1,16 @@
-# Current Feature: Item Drawer
+# Current Feature
 
 ## Status
 
-In Progress
+Complete
 
 ## Goals
 
 <!-- Bullet points of what success looks like -->
 
-- Clicking any `ItemCard` opens a right-side slide-in drawer showing that item's
-  full detail — no page navigation, and no separate item route.
-- The drawer works from all three places `ItemCard` renders today: the dashboard's
-  `PinnedItems` and `RecentItems` sections, and the `/items/[slug]` list page.
-- Detail content matches `context/screenshots/dashboard-ui-drawer.png`: type icon
-  and title header, type + language badges, the action bar, then Description,
-  Content, Tags, Collections and a Details block with Created / Updated dates.
-- Full detail is fetched on click from `GET /api/items/[id]`, which re-derives the
-  user from `auth()` and scopes the query by `userId`.
-- A new `getItem(userId, id)` in `src/lib/db/items.ts` returns an `ItemDetail` —
-  `ItemSummary` plus `content`, `language`, `url`, `contentType`, `createdAt` and
-  the collections the item belongs to.
-- The drawer renders a skeleton while the fetch is in flight, and an error state
-  if it fails.
-- The action bar renders Favorite, Pin, Copy, Edit and Delete in the screenshot's
-  layout, with Copy working and the rest display-only this feature.
-- `npx tsc --noEmit`, `npm run lint`, `npm run build` and `npm test` all pass, and
-  the drawer is verified in the browser on both pages.
-
 ## Notes
 
 <!-- Additional context, constraints, or details from the spec -->
-
-Spec: `context/features/item-drawer-spec.md`. Design already drafted in
-`docs/item-crud-architecture.md` §4 (`getItem`) and §6 (`ItemDrawer.tsx`) — this
-feature ships the read half of that design, not the form half.
-
-**Scope decision settled at load.** The spec lists a five-button action bar but
-also says "let's just work on the drawer details display". Confirmed: the bar is
-**display only except Copy**, which is pure client-side clipboard and needs no
-backend. Favorite and Pin render their true state (the star is yellow when the
-item is favorited) but are inert; Edit and Delete are inert. No
-`src/actions/items.ts` and no mutations in this feature — the toggles, the form
-and the delete confirmation belong to the item CRUD feature that follows.
-
-**The API route is not behind the proxy.** `src/proxy.ts`'s matcher covers
-`/dashboard/:path*`, `/profile/:path*` and `/items/:path*` — it does **not** match
-`/api/items/[id]`. The route is a public endpoint and must authenticate itself,
-exactly as `src/actions/profile.ts` does. Put `userId` in the `where` rather than
-fetching and then comparing owners: a wrong owner should return 404, since a 403
-would confirm the id exists.
-
-**An API route is the right call here despite the Server Action default.** The
-coding standards prefer Server Actions for mutations, but this is a read fired
-from a client component on click — Server Actions are POST-only and not the shape
-for that. It also matches the standards' "endpoints for future clients" case.
-
-**No new shadcn component and no migration.** `src/components/ui/sheet.tsx` and
-`skeleton.tsx` are both already installed (pulled in by `sidebar`), and every
-column the drawer reads — `content`, `language`, `url`, `contentType`,
-`createdAt` — has been in `Item` since the database feature.
-
-**Open question for `start`: where the drawer state lives.** All three `ItemCard`
-call sites are server components, so a client wrapper is required. Either each
-list gets a wrapper that owns one drawer for its cards, or a single provider sits
-in the `(app)` layout and `ItemCard` becomes a client trigger. The second avoids
-three drawers on the dashboard but touches the shared shell, which is a bigger
-change than this feature was asked for.
-
-Two things the screenshot shows that are deliberately **not** this feature: the
-syntax-highlighted code block with line numbers (the spec defers the code editor,
-so content renders as plain preformatted text for now), and the `⌘K` search box in
-the top bar, which is unrelated.
 
 ## History
 
@@ -406,3 +346,20 @@ the top bar, which is unrelated.
 - Feature complete — committed as `test: set up vitest for server actions and utilities` on `chore/vitest-setup` and merged into `main` with `--no-ff`, then the branch was deleted. The scope rule was verified rather than assumed: a deliberately failing test dropped under `src/components/` left the run at 5 files and 52 tests, then was removed
 - Still open, unchanged by this work: `/collections` and `/collections/[id]` still 404, and the sidebar's "View all collections" row still leads nowhere; `/profile` still has no way to edit a name or avatar; expired verification and reset tokens are still never swept; a signed-in user visiting `/sign-in` still sees the form; rate limiting is inert on every deployed environment until the Upstash variables are added there; `EMAIL_FROM` still needs a domain verified in Resend; and the Vercel Production/Preview environment variables have still never been checked
 - Loaded `context/features/item-drawer-spec.md` (asked for as `item-draw-spec.md`) and set the current feature to the item detail drawer — the read half of the design in `docs/item-crud-architecture.md`, shipping `getItem`, `GET /api/items/[id]` and a right-side `Sheet` opened by clicking an `ItemCard`. Loading it settled one ambiguity and surfaced three constraints: the spec lists a five-button action bar while also deferring "the extras", resolved with the user as display-only except Copy, so no `src/actions/items.ts` and no mutations this feature; `src/proxy.ts`'s matcher does not cover `/api/*`, so the route must authenticate itself and scope by `userId` in the `where` rather than comparing owners after the fetch; `sheet.tsx` and `skeleton.tsx` are already installed and every column the drawer reads already exists, so there is no shadcn addition and no migration; and where the drawer state lives — a wrapper per list, or one provider in the `(app)` layout — is left as a decision for `start`
+- Built the item detail drawer on branch `feature/item-drawer`. **No migration and no new dependency**: `sheet.tsx` and `skeleton.tsx` were already installed (both pulled in by `sidebar`), and `content`, `language`, `url`, `contentType` and `createdAt` have been on `Item` since the database feature
+- Two additions to the data layer, no new files: `ItemDetail`/`SerializedItemDetail` and `getItem(userId, id)` in `items.ts`. The tag sort that `findItems` did inline became a shared `sortTagNames`, so a card and the drawer it opens can never disagree about badge order; collections are sorted by name for the same reason, since `ItemCollection` orders only by `addedAt` and would reshuffle when an item is re-filed
+- The `FILE` columns (`fileUrl`, `fileName`, `fileSize`) are deliberately not selected — nothing uploads yet, so they would be fields no view reads, which is the dead-export shape two earlier reviews caught
+- `GET /api/items/[id]` is the first route handler in the project that is **not** covered by `src/proxy.ts`'s matcher, which stops at `/dashboard`, `/profile` and `/items`. It re-derives the user from `auth()` exactly as a Server Action does, and answers 401 rather than throwing the way `getCurrentUserId()` does, because an anonymous request here is expected rather than a routing bug
+- An API route rather than a Server Action is the one case the coding standards' default does not cover: this is a *read* fired from a client component on click, and actions are POST-only and shaped for `useActionState`
+- The open question from `load` resolved to a wrapper per list. `ItemList` is the smallest client boundary that works — the three pages stay server components, the shared `(app)` shell was untouched, and the list layout is passed in as a `className` so the dashboard keeps `space-y-3` and `/items/[slug]` keeps its grid. The dashboard mounts two drawers, which costs nothing since a closed sheet renders nothing and the modal overlay makes two-open unreachable
+- The whole card is the click target, but only the title is a real `<button>`, stretched over the card with `after:inset-0`. Wrapping the card in a button would have put an `<h3>` and `<time>` inside phrasing-only content, and a `role="button"` div would have meant hand-rolling Enter and Space. Confirmed by hit-testing: a point over the description resolves to the title button
+- Fetch state is stored **with the id it belongs to** rather than as a loading flag. `next.config.ts` sets `reactCompiler: true`, whose lint rules reject setting state in an effect body — the same rule that forced the `use-mobile` rewrite two features ago — and keying by id also stops a slow response painting under a newly opened item
+- A keyboard defect was found during verification and fixed: closing the drawer left focus on `<body>`, because Radix restores focus to whatever held it at open time and the card is not a `SheetTrigger`. `ItemList` now hands the triggering button to `onCloseAutoFocus`; Tab → Enter → Escape returns focus to the exact card
+- The action bar is display only except Copy, which is pure client-side clipboard. Favorite and Pin render the item's real state but do not toggle it, and what Copy puts on the clipboard branches on `contentType`, never on the type's name, so a custom type flows through unchanged
+- Verified in the browser against the live development branch: both pages, TEXT items rendering Content and URL items rendering a Link with no language badge, Copy writing the clipboard and reverting after 2s, the skeleton carrying an sr-only title for Radix without shifting layout, long code scrolling inside its `<pre>` at 390px without widening the sheet, one drawer open at a time, and zero console errors or warnings. All four error branches (404/401/500/offline) were exercised rather than left untested — the class of gap the rate-limiting review caught
+- The client bundle was checked rather than assumed: the drawer is in it and there are zero references to `PrismaClient`, `generated/prisma`, `pg-pool` or `bcryptjs`, so the type-only import from `@/lib/db/items` erased cleanly
+- The review found three things, all fixed before merge. `ItemCollectionSummary` was exported with no consumer and is now module-private; the `SerializedItemDetail` doc claimed deriving from `ItemDetail` keeps the two in step, which holds only for non-`Date` fields, so the hand-written `Omit` is now called out; and the id-keyed fetch state means reopening the same item reuses the response, which is harmless today but **must be cleared by the feature that adds Favorite, Pin, Edit and Delete** or the drawer will show pre-edit values
+- Per-user scoping is pinned by unit test on the `where` clause rather than observed over HTTP: only `demo@devstash.io` owns items on the development branch, so a second session would show 0 everywhere and could not distinguish correct filtering from over-filtering — the same limitation the items list view recorded
+- Fixed an unrelated pre-existing bug in `DashboardTopBar` at the user's request, committed separately as `fix: stop the dashboard top bar overflowing at narrow widths`. The button group was shrinkable while the buttons inside it were `shrink-0`, so they overflowed its box and scrolled the page sideways; the group is now `shrink-0` and the search takes the deficit, which needed `min-w-0` before an `<input>` would yield its intrinsic width. The labels collapse to icons via a **container** query, not a viewport one, because the bar sits inside `SidebarInset` — at a 768px viewport the header is 497px with the sidebar open and 753px with it closed, and a media query cannot tell those apart
+- Feature complete — `npx tsc --noEmit`, `npm run lint`, `npm test` (62 tests, 10 new for `getItem`) and `npm run build` all pass, with `/api/items/[id]` listed as a new `ƒ` route. Merged into `main` with `--no-ff` and the branch deleted
+- Still open, unchanged by this feature: `/collections` and `/collections/[id]` still 404, and the sidebar's "View all collections" row still leads nowhere; `/profile` still has no way to edit a name or avatar; expired verification and reset tokens are still never swept; a signed-in user visiting `/sign-in` still sees the form; rate limiting is inert on every deployed environment until the Upstash variables are added there; `EMAIL_FROM` still needs a domain verified in Resend; and the Vercel Production/Preview environment variables have still never been checked
