@@ -8,19 +8,30 @@ import { formatShortDate } from "@/lib/format";
 
 interface ItemCardProps {
   item: ItemSummary;
+  /**
+   * Opens the detail drawer for this item. Receives the button that was
+   * activated, so the list can put focus back on it when the drawer closes.
+   */
+  onSelect: (trigger: HTMLElement) => void;
 }
 
 /**
  * One row in the pinned / recent item lists: type icon, title with its pin and
  * favorite markers, description, tags, and the last-updated date.
+ *
+ * The whole card is the click target, but only the title is a real `<button>`,
+ * stretched over the card by `after:inset-0`. Wrapping the card in a button
+ * instead would put the `<h3>` and `<time>` inside phrasing-only content, and a
+ * `role="button"` div would mean hand-rolling Enter and Space. This way the
+ * accessible name is the item's title and keyboard support is the browser's.
  */
-export function ItemCard({ item }: ItemCardProps) {
+export function ItemCard({ item, onSelect }: ItemCardProps) {
   const { type } = item;
 
   return (
     <Card
       size="sm"
-      className="border-l-4 transition-colors hover:bg-muted/40"
+      className="relative cursor-pointer border-l-4 transition-colors hover:bg-muted/40 has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring"
       style={{ borderLeftColor: type.color }}
     >
       <CardContent className="flex items-start gap-3">
@@ -41,7 +52,18 @@ export function ItemCard({ item }: ItemCardProps) {
 
         <div className="min-w-0 flex-1 space-y-2">
           <div className="flex items-center gap-2">
-            <h3 className="truncate font-medium">{item.title}</h3>
+            <h3 className="min-w-0 truncate font-medium">
+              <button
+                type="button"
+                onClick={(event) => onSelect(event.currentTarget)}
+                // Stretches the hit area over the whole card. The ring is on
+                // the card via `has-[:focus-visible]`, so the outline here
+                // would only trace the title.
+                className="block w-full truncate text-left after:absolute after:inset-0 focus-visible:outline-none"
+              >
+                {item.title}
+              </button>
+            </h3>
             {item.isPinned && (
               <Pin
                 className="size-3.5 shrink-0 text-muted-foreground"

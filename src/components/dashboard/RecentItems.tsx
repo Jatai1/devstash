@@ -1,6 +1,6 @@
 import { Clock } from "lucide-react";
 
-import { ItemCard } from "@/components/dashboard/ItemCard";
+import { ItemList } from "@/components/dashboard/ItemList";
 import { getRecentItems } from "@/lib/db/items";
 import { getCurrentUserId } from "@/lib/db/user";
 
@@ -23,11 +23,7 @@ export async function RecentItems() {
         Recent
       </h2>
 
-      <div className="space-y-3">
-        {recent.map((item) => (
-          <ItemCard key={item.id} item={item} />
-        ))}
-      </div>
+      <ItemList items={recent} className="space-y-3" />
     </section>
   );
 }

@@ -1,16 +1,76 @@
-# Current Feature
+# Current Feature: Item Drawer
 
 ## Status
 
-Complete
+In Progress
 
 ## Goals
 
 <!-- Bullet points of what success looks like -->
 
+- Clicking any `ItemCard` opens a right-side slide-in drawer showing that item's
+  full detail — no page navigation, and no separate item route.
+- The drawer works from all three places `ItemCard` renders today: the dashboard's
+  `PinnedItems` and `RecentItems` sections, and the `/items/[slug]` list page.
+- Detail content matches `context/screenshots/dashboard-ui-drawer.png`: type icon
+  and title header, type + language badges, the action bar, then Description,
+  Content, Tags, Collections and a Details block with Created / Updated dates.
+- Full detail is fetched on click from `GET /api/items/[id]`, which re-derives the
+  user from `auth()` and scopes the query by `userId`.
+- A new `getItem(userId, id)` in `src/lib/db/items.ts` returns an `ItemDetail` —
+  `ItemSummary` plus `content`, `language`, `url`, `contentType`, `createdAt` and
+  the collections the item belongs to.
+- The drawer renders a skeleton while the fetch is in flight, and an error state
+  if it fails.
+- The action bar renders Favorite, Pin, Copy, Edit and Delete in the screenshot's
+  layout, with Copy working and the rest display-only this feature.
+- `npx tsc --noEmit`, `npm run lint`, `npm run build` and `npm test` all pass, and
+  the drawer is verified in the browser on both pages.
+
 ## Notes
 
 <!-- Additional context, constraints, or details from the spec -->
+
+Spec: `context/features/item-drawer-spec.md`. Design already drafted in
+`docs/item-crud-architecture.md` §4 (`getItem`) and §6 (`ItemDrawer.tsx`) — this
+feature ships the read half of that design, not the form half.
+
+**Scope decision settled at load.** The spec lists a five-button action bar but
+also says "let's just work on the drawer details display". Confirmed: the bar is
+**display only except Copy**, which is pure client-side clipboard and needs no
+backend. Favorite and Pin render their true state (the star is yellow when the
+item is favorited) but are inert; Edit and Delete are inert. No
+`src/actions/items.ts` and no mutations in this feature — the toggles, the form
+and the delete confirmation belong to the item CRUD feature that follows.
+
+**The API route is not behind the proxy.** `src/proxy.ts`'s matcher covers
+`/dashboard/:path*`, `/profile/:path*` and `/items/:path*` — it does **not** match
+`/api/items/[id]`. The route is a public endpoint and must authenticate itself,
+exactly as `src/actions/profile.ts` does. Put `userId` in the `where` rather than
+fetching and then comparing owners: a wrong owner should return 404, since a 403
+would confirm the id exists.
+
+**An API route is the right call here despite the Server Action default.** The
+coding standards prefer Server Actions for mutations, but this is a read fired
+from a client component on click — Server Actions are POST-only and not the shape
+for that. It also matches the standards' "endpoints for future clients" case.
+
+**No new shadcn component and no migration.** `src/components/ui/sheet.tsx` and
+`skeleton.tsx` are both already installed (pulled in by `sidebar`), and every
+column the drawer reads — `content`, `language`, `url`, `contentType`,
+`createdAt` — has been in `Item` since the database feature.
+
+**Open question for `start`: where the drawer state lives.** All three `ItemCard`
+call sites are server components, so a client wrapper is required. Either each
+list gets a wrapper that owns one drawer for its cards, or a single provider sits
+in the `(app)` layout and `ItemCard` becomes a client trigger. The second avoids
+three drawers on the dashboard but touches the shared shell, which is a bigger
+change than this feature was asked for.
+
+Two things the screenshot shows that are deliberately **not** this feature: the
+syntax-highlighted code block with line numbers (the spec defers the code editor,
+so content renders as plain preformatted text for now), and the `⌘K` search box in
+the top bar, which is unrelated.
 
 ## History
 
@@ -345,3 +405,4 @@ Complete
 - Verified — `npm test` reports 52 passing across 5 files in under a second, and `npx tsc --noEmit`, `npm run lint` and `npm run build` all pass with the route list unchanged
 - Feature complete — committed as `test: set up vitest for server actions and utilities` on `chore/vitest-setup` and merged into `main` with `--no-ff`, then the branch was deleted. The scope rule was verified rather than assumed: a deliberately failing test dropped under `src/components/` left the run at 5 files and 52 tests, then was removed
 - Still open, unchanged by this work: `/collections` and `/collections/[id]` still 404, and the sidebar's "View all collections" row still leads nowhere; `/profile` still has no way to edit a name or avatar; expired verification and reset tokens are still never swept; a signed-in user visiting `/sign-in` still sees the form; rate limiting is inert on every deployed environment until the Upstash variables are added there; `EMAIL_FROM` still needs a domain verified in Resend; and the Vercel Production/Preview environment variables have still never been checked
+- Loaded `context/features/item-drawer-spec.md` (asked for as `item-draw-spec.md`) and set the current feature to the item detail drawer — the read half of the design in `docs/item-crud-architecture.md`, shipping `getItem`, `GET /api/items/[id]` and a right-side `Sheet` opened by clicking an `ItemCard`. Loading it settled one ambiguity and surfaced three constraints: the spec lists a five-button action bar while also deferring "the extras", resolved with the user as display-only except Copy, so no `src/actions/items.ts` and no mutations this feature; `src/proxy.ts`'s matcher does not cover `/api/*`, so the route must authenticate itself and scope by `userId` in the `where` rather than comparing owners after the fetch; `sheet.tsx` and `skeleton.tsx` are already installed and every column the drawer reads already exists, so there is no shadcn addition and no migration; and where the drawer state lives — a wrapper per list, or one provider in the `(app)` layout — is left as a decision for `start`
