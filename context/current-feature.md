@@ -1,16 +1,90 @@
-# Current Feature
+# Current Feature: Rate Limiting for Auth
 
 ## Status
 
-Not Started
+In Progress
 
 ## Goals
 
-<!-- Bullet points of what success looks like -->
+- Add `src/lib/rate-limit.ts`: an Upstash Redis client plus a reusable sliding-window
+  limiter that returns `{ success, remaining, reset }`
+- Derive the caller's IP from `x-forwarded-for` (Vercel) with a sane fallback, and
+  combine it with the submitted email where the spec asks for a tighter key
+- Enforce the spec's five limits: sign-in 5 / 15 min (IP + email), register 3 / 1 h (IP),
+  forgot-password 3 / 1 h (IP), reset-password 5 / 15 min (IP), resend-verification
+  3 / 15 min (IP + email)
+- Return `429` with `{ error: "Too many attempts. Please try again in X minutes." }` and a
+  `Retry-After` header from `POST /api/auth/register`
+- Surface a user-friendly "too many attempts" message on every rate-limited form
+- Fail **open** — if Upstash is unreachable or unconfigured, the request proceeds
+- Document `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN` in `.env.example`
 
 ## Notes
 
-<!-- Additional context, constraints, or details from the spec -->
+**Spec source:** `context/features/rate-limiting-spec.md`, moved there during `start`
+from `src/lib/`, where it had been sitting alongside application code.
+
+**Decisions taken at `start`:** Upstash credentials supplied manually rather than through
+`vercel integration add`; limits reported inline via each form's existing error slot
+rather than by adding a toast component; and sign-in limited in **both** the Server
+Action and `authorize` so a direct POST to the callback route is counted too.
+
+**The endpoint table does not match this codebase.** Only one of the five rows is an API
+route. Four of them are Server Actions, which changes what "return a 429" can mean:
+
+| Spec row | What actually exists |
+|---|---|
+| `/api/auth/callback/credentials` (login) | Server Action `signInWithCredentials` — `src/actions/auth.ts:50`; the NextAuth callback route is reached *through* it |
+| `/api/auth/register` | Real route — `src/app/api/auth/register/route.ts` |
+| `/api/auth/forgot-password` | Server Action `requestPasswordReset` — `src/actions/password-reset.ts:47` |
+| `/api/auth/reset-password` | Server Action `resetPassword` — `src/actions/password-reset.ts:114` |
+| `/api/auth/resend-verification` | Server Action `resendVerificationEmail` — `src/actions/auth.ts:138` |
+
+How each was resolved:
+
+- `429` + `Retry-After` is implemented on the register route, the only one that can
+  carry them. The four actions return the limit message through their existing `error`
+  field, so **no form changed** — all five already render `state.error`.
+- Sign-in is counted in exactly one place, `authorize`, which every path reaches. The
+  Server Action only **peeks** (`getRemaining`, which runs no `INCRBY`), purely to
+  render a precise "try again in N minutes" — the code `authorize` throws travels in a
+  redirect URL and cannot carry a number. If both consumed, one submission would cost
+  two of five attempts.
+- A successful sign-in clears its window, so only failures count toward the budget.
+- `RATE_LIMITED_CODE` was added to `src/lib/auth-errors.ts` so a direct callback POST
+  gets real copy rather than "email and password do not match".
+
+Verification notes for anyone repeating it:
+
+- **Rate limiting cannot be exercised from a browser on localhost.** Next sets no
+  forwarded headers for direct requests, so `getClientIp()` returns null and everything
+  fails open. Testing needs either `curl -H "x-forwarded-for: ..."` or a proxy that
+  injects one. A proxy must leave `host` alone — Next compares `x-forwarded-host` to
+  `origin` on Server Action requests and aborts on a mismatch — and Auth.js will still
+  reject proxied sign-ins with `UntrustedHost` unless `trustHost` is set.
+- Importing `src/lib/rate-limit.ts` from a `tsx` script needs
+  `NODE_OPTIONS="--conditions=react-server"`, or `server-only` throws.
+
+Other constraints:
+
+- `@upstash/ratelimit` and `@upstash/redis` are installed, and the credentials in `.env`
+  point at a live Upstash database (`obliging-wasp-69934.upstash.io`). Vercel's
+  Production and Preview environments do **not** have these variables yet, so rate
+  limiting is inert on every deployed environment until they are added.
+- `src/proxy.ts` runs at the edge from `auth.config.ts` alone. If any limiting moves
+  into the proxy, it must not pull Prisma or bcrypt into that bundle — the split
+  documented in `CLAUDE.md` has to survive, and the bundle gets re-checked before merge.
+- Fail-open is a security trade-off the spec chose deliberately: an Upstash outage must
+  not lock everyone out of signing in. It also means a misconfigured environment
+  silently disables limiting, so the helper should log when it falls open.
+- Keying by IP + email means the email has to be validated (or at least normalized to
+  lowercase, as registration already does) before it becomes part of a Redis key.
+- This closes a gap logged across four previous features: the register route's `409`
+  confirms an email exists, and the four mail-triggering routes are unmetered.
+- Out of scope, still open from earlier features: `/items/[slug]`, `/collections` and
+  `/collections/[id]` 404; `/profile` cannot edit a name or avatar; expired tokens are
+  never swept; the Vercel Production/Preview environment variables have never been
+  checked.
 
 ## History
 
@@ -293,3 +367,4 @@ Not Started
 - Feature complete — `npx tsc --noEmit`, `npm run lint` and `npm run build` all pass, with `/profile/change-password` and `/profile/delete-account` listed as new `ƒ` routes and `/dashboard` and `/profile` still `ƒ`. Merged into `main` with `--no-ff`
 - Left undone deliberately, both raised in review and neither blocking: `src/components/ui/alert-dialog.tsx` is now orphaned, since the dialog it backed was its only consumer, which regresses the "every `ui/*` file is reachable" property an earlier cleanup pass verified; and `src/components/dashboard/` now supplies the shell for `/profile` too, so the `Dashboard*` prefix is misleading, but renaming touches many imports and would have buried the real change
 - Still open, unchanged by this feature: `/items/[slug]`, `/collections` and `/collections/[id]` all 404, and the profile's type breakdown still links to the first of those; `/profile` still has no way to edit a name or avatar; rate limiting is still deferred across all four mail-triggering routes; expired tokens are still never swept; a signed-in user visiting `/sign-in` still sees the form; and the Vercel Production/Preview environment variables have still never been checked
+- Loaded `src/lib/rate-limiting-spec.md` and set the current feature to rate limiting the auth surface with Upstash Redis — the deferred item that four previous features logged as growing more pressing. Loading it surfaced that the spec's endpoint table describes five API routes while only `/api/auth/register` is one: sign-in, forgot-password, reset-password and resend-verification are all Server Actions, which cannot set a `429` status or a `Retry-After` header and must report the limit through their existing field-error shape instead. The spec's toast requirement also has nothing to render it — there is no toast component in `src/components/ui/` and every auth form shows errors inline

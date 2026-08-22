@@ -3,11 +3,12 @@ import NextAuth, { CredentialsSignin } from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 
 import authConfig from "@/auth.config";
-import { EMAIL_NOT_VERIFIED_CODE } from "@/lib/auth-errors";
+import { EMAIL_NOT_VERIFIED_CODE, RATE_LIMITED_CODE } from "@/lib/auth-errors";
 import { signInSchema } from "@/lib/auth-schemas";
 import { isEmailVerificationEnabled } from "@/lib/email-verification";
 import { verifyPassword } from "@/lib/password";
 import { prisma } from "@/lib/prisma";
+import { limitByIpAndEmail, resetIpAndEmailLimit } from "@/lib/rate-limit";
 
 /**
  * Thrown when the password was right but the address was never confirmed.
@@ -21,6 +22,18 @@ import { prisma } from "@/lib/prisma";
  */
 class EmailNotVerifiedError extends CredentialsSignin {
   code = EMAIL_NOT_VERIFIED_CODE;
+}
+
+/**
+ * Thrown when this IP has spent its sign-in budget for the address it is
+ * guessing at.
+ *
+ * Safe to name, because it describes the caller's own request rate rather than
+ * anything about the account — an attacker learns only that they are being
+ * throttled, which they can already tell.
+ */
+class RateLimitedError extends CredentialsSignin {
+  code = RATE_LIMITED_CODE;
 }
 
 /**
@@ -45,6 +58,20 @@ const credentials = Credentials({
     }
 
     const { email, password } = parsed.data;
+
+    // Counted here rather than in the Server Action because this is the one
+    // place every path funnels through: the form, a direct POST to
+    // `/api/auth/callback/credentials`, and any future client all reach it.
+    // Limiting only the action would leave the callback route wide open, which
+    // is the brute-force case this feature exists to stop.
+    //
+    // Spent before the lookup and the bcrypt compare, so a throttled caller
+    // costs neither a query nor a 12-round hash.
+    const rate = await limitByIpAndEmail("signIn", email);
+
+    if (!rate.success) {
+      throw new RateLimitedError();
+    }
 
     const user = await prisma.user.findUnique({
       where: { email },
@@ -78,6 +105,12 @@ const credentials = Credentials({
     if (isEmailVerificationEnabled() && !user.emailVerified) {
       throw new EmailNotVerifiedError();
     }
+
+    // The window is cleared only once the sign-in has fully succeeded, so
+    // someone who mistyped their password four times and then got it right does
+    // not stay one attempt away from a lockout. Only failures should count
+    // toward a brute-force budget.
+    await resetIpAndEmailLimit("signIn", email);
 
     return { id: user.id, name: user.name, email: user.email, image: user.image };
   },

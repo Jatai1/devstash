@@ -19,8 +19,25 @@
  */
 export const EMAIL_NOT_VERIFIED_CODE = "EmailNotVerified";
 
+/**
+ * The `code` a rate-limited sign-in attempt reports.
+ *
+ * Unlike every other credentials failure this one says something true and
+ * specific, because it describes the *caller's* own request rate rather than
+ * anything about the account. It exists so a direct POST to
+ * `/api/auth/callback/credentials` — which never touches the Server Action and
+ * so never sees its message — still comes back with something better than
+ * "email and password do not match".
+ */
+export const RATE_LIMITED_CODE = "RateLimited";
+
 const AUTH_ERROR_MESSAGES: Record<string, string> = {
   CredentialsSignin: "That email and password do not match an account.",
+
+  // Deliberately vaguer than the Server Action's message, which can name the
+  // exact wait. A code in a redirect URL cannot carry a number of minutes.
+  [RATE_LIMITED_CODE]:
+    "Too many sign-in attempts. Please wait a few minutes and try again.",
 
   [EMAIL_NOT_VERIFIED_CODE]:
     "Please verify your email address before signing in. Check your inbox for the link, or request a new one below.",
