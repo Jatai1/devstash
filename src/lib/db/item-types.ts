@@ -1,3 +1,5 @@
+import { cache } from "react";
+
 import { prisma } from "@/lib/prisma";
 
 /**
@@ -31,6 +33,29 @@ export interface ItemTypeNavSummary extends ItemTypeSummary {
   /** How many of the user's items use this type. */
   itemCount: number;
 }
+
+/**
+ * The type behind an `/items/[slug]` segment, or `null` when the segment names
+ * nothing this user can see — a custom type belonging to someone else reads the
+ * same as a typo, and both should 404.
+ *
+ * `@@unique([userId, slug])` only constrains a slug per owner, so a custom type
+ * is free to reuse a system type's slug. System types lead here for the same
+ * reason they lead in `getItemTypes()`: the resolution has to be stable, and the
+ * seeded types are the ones every link in the app already points at.
+ *
+ * `cache` dedupes it, so a page and its `generateMetadata` — which both have to
+ * resolve the same segment — cost one query between them.
+ */
+export const getItemTypeBySlug = cache(
+  async (userId: string, slug: string): Promise<ItemTypeSummary | null> => {
+    return prisma.itemType.findFirst({
+      where: { slug, OR: [{ userId: null }, { userId }] },
+      orderBy: { isSystem: "desc" },
+      select: ITEM_TYPE_SELECT,
+    });
+  },
+);
 
 /**
  * Every type the user can file an item under: the seven immutable system types
