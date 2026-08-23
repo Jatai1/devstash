@@ -1,15 +1,12 @@
 "use client";
 
-import { Check, Copy, Pencil, Pin, Star } from "lucide-react";
-import { useEffect, useState } from "react";
+import { Pencil, Pin, Star } from "lucide-react";
 
+import { CopyButton } from "@/components/dashboard/CopyButton";
 import { DeleteItemDialog } from "@/components/dashboard/DeleteItemDialog";
 import { Button } from "@/components/ui/button";
 import type { SerializedItemDetail } from "@/lib/db/items";
 import { cn } from "@/lib/utils";
-
-/** How long the Copy button stays in its confirmed state. */
-const COPIED_FEEDBACK_MS = 2000;
 
 interface ItemActionBarProps {
   item: SerializedItemDetail;
@@ -64,55 +61,6 @@ export function ItemActionBar({ item, onEdit, onDeleted }: ItemActionBarProps) {
         />
       </div>
     </div>
-  );
-}
-
-/**
- * Copies the item's payload to the clipboard, then confirms for two seconds.
- *
- * Disabled when there is nothing to copy — a note with an empty body, or a file
- * item, whose payload is a blob rather than text.
- */
-function CopyButton({ text }: { text: string | null }) {
-  const [copied, setCopied] = useState(false);
-
-  // Without the cleanup, copying and then closing the drawer would leave a
-  // timer to set state on an unmounted component.
-  useEffect(() => {
-    if (!copied) {
-      return;
-    }
-
-    const timer = setTimeout(() => setCopied(false), COPIED_FEEDBACK_MS);
-
-    return () => clearTimeout(timer);
-  }, [copied]);
-
-  async function handleCopy() {
-    if (!text) {
-      return;
-    }
-
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopied(true);
-    } catch {
-      // `navigator.clipboard` needs a secure context and can be refused by
-      // permissions policy. Nothing was copied, so say nothing rather than
-      // claim success.
-      setCopied(false);
-    }
-  }
-
-  return (
-    <Button variant="ghost" size="sm" onClick={handleCopy} disabled={!text}>
-      {copied ? (
-        <Check className="size-4 text-emerald-500" />
-      ) : (
-        <Copy className="size-4" />
-      )}
-      {copied ? "Copied" : "Copy"}
-    </Button>
   );
 }
 

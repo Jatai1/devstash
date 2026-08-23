@@ -3,6 +3,7 @@
 import { CalendarDays, FolderOpen, Tag } from "lucide-react";
 import { useEffect, useState } from "react";
 
+import { CodeEditor } from "@/components/dashboard/CodeEditor";
 import { ItemActionBar } from "@/components/dashboard/ItemActionBar";
 import { ItemEditForm } from "@/components/dashboard/ItemEditForm";
 import { TypeIcon } from "@/components/dashboard/TypeIcon";
@@ -14,6 +15,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
+import { isCodeItemType } from "@/lib/code-item-types";
 import type { SerializedItemDetail } from "@/lib/db/items";
 import { formatLongDate } from "@/lib/format";
 
@@ -319,20 +321,31 @@ function ViewBody({
  * The item's payload, branched on `contentType` rather than on the type's name
  * so a custom type flows through unchanged — see `docs/item-types.md`.
  *
- * `TEXT` renders as plain preformatted text for now: syntax highlighting and
- * the code editor are deferred, per the spec.
+ * `TEXT` is the one case that then looks at the name as well, and only to pick
+ * a control: a snippet or a command renders in the code editor, everything else
+ * text stays preformatted prose. Which *columns* a type has is still the kind's
+ * answer alone — see `isCodeItemType`.
  */
 function ItemPayload({ item }: { item: SerializedItemDetail }) {
   switch (item.contentType) {
     case "TEXT":
       return (
-        item.content && (
+        item.content &&
+        (isCodeItemType(item.type.name) ? (
+          <Section label="Content">
+            <CodeEditor
+              value={item.content}
+              language={item.language}
+              label={`${item.title} contents`}
+            />
+          </Section>
+        ) : (
           <Section label="Content">
             <pre className="overflow-x-auto rounded-lg border bg-muted/50 p-4 font-mono text-xs leading-relaxed">
               <code>{item.content}</code>
             </pre>
           </Section>
-        )
+        ))
       );
 
     case "URL":

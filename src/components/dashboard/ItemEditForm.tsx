@@ -5,10 +5,12 @@ import { useId, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { updateItem, type UpdateItemState } from "@/actions/items";
+import { CodeEditor } from "@/components/dashboard/CodeEditor";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { isCodeItemType } from "@/lib/code-item-types";
 import type { SerializedItemDetail } from "@/lib/db/items";
 import { parseTagInput, type ItemField } from "@/lib/item-schemas";
 
@@ -46,6 +48,10 @@ export function ItemEditForm({ item, onCancel, onSaved }: ItemEditFormProps) {
 
   const [state, setState] = useState<UpdateItemState>({});
   const [isPending, startTransition] = useTransition();
+
+  // Which *control* renders the body. Not the same question as which fields
+  // exist, which `contentType` answers below — see `isCodeItemType`.
+  const isCode = isCodeItemType(item.type.name);
 
   // A client-side guard only. The schema enforces the same rule server-side,
   // which is the one that counts — this just stops a submit that cannot succeed.
@@ -158,24 +164,39 @@ export function ItemEditForm({ item, onCancel, onSaved }: ItemEditFormProps) {
               label="Content"
               errors={errorsFor("content")}
             >
-              {(props) => (
-                <Textarea
-                  {...props}
-                  value={content}
-                  onChange={(event) => setContent(event.target.value)}
-                  // Plain text on purpose: a code editor and syntax
-                  // highlighting are a later feature, so the font is the only
-                  // nod to what is usually in here.
-                  className="max-h-96 min-h-40 font-mono text-xs"
-                  spellCheck={false}
-                />
-              )}
+              {(props) =>
+                isCode ? (
+                  <CodeEditor
+                    {...props}
+                    value={content}
+                    onChange={setContent}
+                    // The live field, not the stored column: retyping the
+                    // language rehighlights the body without a save.
+                    language={language}
+                    label="Content"
+                  />
+                ) : (
+                  <Textarea
+                    {...props}
+                    value={content}
+                    onChange={(event) => setContent(event.target.value)}
+                    // Prose, but usually wrapped prose — the mono font is the
+                    // only nod to what tends to be in here.
+                    className="max-h-96 min-h-40 font-mono text-xs"
+                    spellCheck={false}
+                  />
+                )
+              }
             </Field>
 
             <Field
               id={`${fieldId}-language`}
               label="Language"
-              hint="Used for syntax highlighting later, e.g. typescript"
+              hint={
+                isCode
+                  ? "Sets syntax highlighting, e.g. typescript"
+                  : "Used for syntax highlighting later, e.g. typescript"
+              }
               errors={errorsFor("language")}
             >
               {(props) => (
