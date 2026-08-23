@@ -1,98 +1,16 @@
-# Current Feature: Code Editor
+# Current Feature
 
 ## Status
 
-In Progress
+Complete
 
 ## Goals
 
-- A `CodeEditor` component built on Monaco with a dark theme matching the app's tokens.
-- Code item bodies render in it instead of a `Textarea`/`<pre>`; prose item bodies keep the `Textarea`.
-- macOS-style window dots (red/yellow/green) sit at the top-left of the editor chrome.
-- The editor header carries a quick copy button, with the item's language shown next to it.
-- The same component serves both display (readonly) and edit modes.
-- Height grows with the content up to a 400px cap, with a scrollbar styled to the theme.
+<!-- Bullet points of what success looks like -->
 
 ## Notes
 
-Read against the codebase, the spec is buildable with **no migration, no schema change and no
-server-side change at all** — this is entirely presentational. But it has one contradiction with
-a settled project rule, one dependency question, and one structural obstacle that decides how
-much of the codebase the change touches.
-
-**The name-based split contradicts the project's branching rule — and the drawer cannot
-currently do it anyway.** Requirements 2 and 3 split on the item type's *name*: Monaco for
-`snippet` and `command`, `Textarea` for `note` and `prompt`. All four are `contentKind: TEXT`,
-and `docs/item-types.md` sets the rule that code branches on the kind and never the name; the
-item-create feature rejected exactly this split one feature ago. This case is weaker than that
-one, though — that split changed *which fields exist*, so create and edit disagreed about the
-same row, whereas this one only changes which control renders a field both surfaces have. Prose
-in a code editor genuinely is worse, so the spec's intent is reasonable. The obstacle is that
-`ITEM_TYPE_SELECT` in `src/lib/db/item-types.ts` selects `id`, `label`, `icon` and `color` — **not
-`name`** — so `ItemDetail.type`, and therefore `ItemDrawer` and `ItemEditForm`, have no name to
-branch on. `NewItemDialog` does have one (`CreatableItemType` carries both `name` and
-`contentKind`), so without a change the create dialog could honour the spec and the drawer could
-not, which is the create/edit disagreement the last feature was built to avoid.
-
-**Three surfaces, not the spec's two.** "Display and edit modes" covers `ItemPayload` in
-`ItemDrawer.tsx:319` (which already carries a comment saying the code editor is deferred *per the
-spec*, so this is the deferral being collected) and `ItemEditForm.tsx:162`. The third is
-`NewItemDialog.tsx`, which the spec does not mention — leaving it on a `Textarea` would mean a
-snippet is written in one control and edited in another.
-
-**Monaco is the project's first heavyweight client dependency.** Nothing Monaco-shaped is in
-`package.json`; it needs `@monaco-editor/react` plus `monaco-editor`, and it cannot server-render,
-so it has to come in through `next/dynamic` with `ssr: false` behind a placeholder sized to avoid
-layout shift. `package.json` should be diffed before and after the install rather than assumed —
-the `sonner` addition quietly pulled in `next-themes`.
-
-**A copy button already exists.** `ItemActionBar.tsx` has a working `CopyButton` that copies the
-item's payload and confirms for two seconds. The spec's editor-header copy would be the second
-copy affordance in the same drawer, so it should reuse that component rather than reimplement the
-clipboard call and its confirmed state.
-
-**`language` is free text and nullable.** `item-schemas.ts` validates it as `optionalText`, not
-against a list, so the header chip needs a fallback for items with no language and Monaco needs a
-fallback for a string that is not one of its language ids. `ItemDrawer.tsx:239` already renders
-the language as a `Badge` in the sheet header — worth deciding whether it stays there once the
-editor header shows it too.
-
-**Height and scrollbar.** Monaco does not auto-size; the height has to be computed from its
-content (line count × line height plus padding), clamped to 400px, with `scrollBeyondLastLine`
-off and `automaticLayout` on. It draws its own scrollbar, so the theming goes through Monaco's
-`scrollbar` options and its theme definition, not the page's CSS.
-
-Decisions settled at `start`:
-
-- **Branch on the type's name**, as the spec asked. `src/lib/code-item-types.ts` holds
-  `CODE_ITEM_TYPE_NAMES` and `isCodeItemType`, in the shape of `src/lib/pro.ts`. The file
-  documents the line this must not cross: `contentKind` still decides which *fields* exist, the
-  name only decides which *control* renders one, and both create and edit read both the same way.
-- **Widened only the detail path.** `ITEM_TYPE_DETAIL_SELECT` / `ItemTypeDetailSummary` add `name`
-  for `getItem` alone; the shared `ITEM_TYPE_SELECT` behind every card, list and collection query
-  is untouched.
-- **A custom TEXT type gets the textarea**, which is what a closed name list means and what the
-  spec's "and other non-code types" says.
-
-What the build then found, in order:
-
-- **Monaco's CDN loader was replaced with the bundled package** (`loader.config({ monaco })`), so
-  an item's body does not depend on jsDelivr being reachable.
-- **The worker specifier is `monaco-editor/editor/editor.worker.js`, not the `esm/vs/...` path the
-  file actually lives at** — the package's `exports` map only publishes `"./*.js"` →
-  `"./esm/vs/*.js"`, so the real path does not resolve and the build fails on it.
-- **Importing the `monaco-editor` barrel was the mistake behind three rounds of console errors.**
-  It pulls the TypeScript/JSON/CSS/HTML *language services*, which demand workers of their own and
-  log `getSyntacticDiagnostics`, `provideInlayHints` and `getNavigationTree` failures against the
-  one generic worker. Trying to switch them off individually failed twice — `languages.typescript`
-  is `undefined` at `beforeMount` because the contribution loads lazily with the language. The fix
-  was structural: import `editor/editor.api` plus `basic-languages/monaco.contribution`, which is
-  Monarch highlighting with no language services and no workers. It also cut the lazy chunk from
-  6.4 MB to 2.2 MB.
-- **Display mode needed a real text alternative.** Monaco keeps only the *visible* lines in the
-  DOM — 20 of 21 on the Dockerfile snippet — so a screen reader cannot read past the viewport. The
-  full body renders in an `sr-only` `pre` and the editor is `aria-hidden`, with `tabIndex: -1` so
-  its focusable edit context is not a trap inside the hidden subtree.
+<!-- Additional context, constraints, or details from the spec -->
 
 ## History
 
@@ -502,3 +420,21 @@ What the build then found, in order:
 - Still open, unchanged by this feature: Favorite and Pin are still disabled in the drawer's action bar, and collection membership is still display-only — a new item cannot be filed into a collection, since the spec had no picker for it; `/collections` and `/collections/[id]` still 404; "New Collection" in the top bar is still display only; `/profile` still has no way to edit a name or avatar; expired verification and reset tokens are still never swept; a signed-in user visiting `/sign-in` still sees the form; rate limiting is inert on every deployed environment until the Upstash variables are added there; `EMAIL_FROM` still needs a domain verified in Resend; and the Vercel Production/Preview environment variables have still never been checked
 - Newly open after this feature: `vitest.config.ts`'s `server-only` stub does not work, so no `server-only` module can be unit tested and `CLAUDE.md`'s claim that it can is wrong; and `checkPlanLimits` is wired but switched off, so the free plan's 50-item and 3-collection caps are documented and tested but not enforced
 - Loaded `context/features/code-editor-spec.md` and set the current feature to the Monaco code editor — a `CodeEditor` component with macOS window dots, a header carrying a copy button and the language, readonly and edit modes, and a fluid height capped at 400px. Loading it surfaced that the feature is **entirely presentational** — no migration, no schema change, no Server Action or query change — and then three things that decide its shape. The contradiction is the spec's per-name split (Monaco for `snippet`/`command`, `Textarea` for `note`/`prompt`): all four are `contentKind: TEXT`, `docs/item-types.md` sets the rule that code branches on the kind and never the name, and the item-create feature rejected the same split one feature ago — though this case is weaker, since that split changed *which fields exist* while this one only changes which control renders a field both surfaces already have, and prose in a code editor really is worse. The obstacle is that `ITEM_TYPE_SELECT` selects `id`/`label`/`icon`/`color` and **not `name`**, so `ItemDetail.type` gives `ItemDrawer` and `ItemEditForm` nothing to branch on, while `NewItemDialog`'s `CreatableItemType` does carry `name` — meaning without a select change the create dialog could honour the spec and the drawer could not, which is exactly the create/edit disagreement the last feature existed to prevent. And the spec's "display and edit modes" is really three surfaces: `ItemPayload` in `ItemDrawer.tsx:319` (whose comment already says the code editor is deferred *per the spec*, so this is that deferral being collected), `ItemEditForm.tsx:162`, and the unmentioned `NewItemDialog`, which would otherwise write a snippet in one control and edit it in another. Also settled at load: Monaco is the project's **first heavyweight client dependency** (`@monaco-editor/react` + `monaco-editor`, necessarily `next/dynamic` with `ssr: false` behind a sized placeholder, with `package.json` diffed before and after since the `sonner` install quietly pulled in `next-themes`); a working `CopyButton` already exists in `ItemActionBar.tsx` and should be reused rather than reimplemented, though it makes the editor header the drawer's *second* copy affordance; `language` is free text and nullable, so both the header chip and Monaco's language id need fallbacks, and `ItemDrawer.tsx:239` already shows it as a `Badge`; and Monaco does not auto-size, so the 400px cap means measuring content height with `scrollBeyondLastLine` off and theming the scrollbar through Monaco's own options rather than page CSS. Three decisions left for `start`: branch on type name or on `contentKind`; if on name, whether to widen `ITEM_TYPE_SELECT` everywhere or only on the detail path (the trade-off the last feature declined for `contentKind`); and whether a custom TEXT type gets the editor, which a name list answers "no" to by default
+- Loaded `context/features/code-editor-spec.md` and built the Monaco code editor on branch `feature/code-editor` — a `CodeEditor` with macOS window dots, a header carrying the language and a copy button, one component serving both display and edit modes, and a height that grows with the content to a 400px cap. Two new dependencies (`@monaco-editor/react`, `monaco-editor`, deduped onto one copy), **no migration, no schema change and no server-side change**: the feature is entirely presentational. `package.json` was diffed before and after the install rather than assumed, since the `sonner` addition once pulled in `next-themes`
+- The spec's per-name split **was** followed, unlike the item-create feature's, and the distinction is the lesson rather than the outcome. That split assigned different *columns* to types that store the same ones, so create and edit disagreed about what an item had; this one only chooses which **control** renders a field both surfaces already agree exists. `contentKind` still decides which fields exist and the name only decides how one is rendered — a line written into `src/lib/code-item-types.ts` itself, because the failure mode is one surface branching on the name while the other branches on the kind
+- `isCodeItemType` lives in a new `src/lib/code-item-types.ts` keyed on `ItemType.name`, in the shape of `src/lib/pro.ts` and for the same documented reason: a `label` or `slug` can be reworded without changing what the row is. A custom type answers `false` and gets the textarea, which is what a closed list means and what the spec's "and other non-code types" says
+- The drawer could not branch at all before this: `ITEM_TYPE_SELECT` carries `id`/`label`/`icon`/`color` and no `name`, so `ItemDetail.type` had nothing to read. Rather than widen the shared select — a column on every item, collection and sidebar query, the trade-off the item-create feature declined for `contentKind` — a second `ITEM_TYPE_DETAIL_SELECT` / `ItemTypeDetailSummary` adds `name` for `getItem` alone
+- The spec named two surfaces and there were three. `ItemPayload` and `ItemEditForm` are the "display and edit" it asked for; `NewItemDialog` went unmentioned, and leaving it on a textarea would have meant writing a snippet in one control and editing it in another
+- **Importing the `monaco-editor` barrel was the mistake behind three rounds of console errors, and the recovery is the part worth keeping.** The barrel pulls the TypeScript, JSON, CSS and HTML *language services*, which run in workers of their own and log `getSyntacticDiagnostics`, `provideInlayHints` and `getNavigationTree` failures against the single generic worker that was wired up. Two attempts to switch them off individually failed — `languages.typescript` is `undefined` at `beforeMount`, because Monaco loads the contribution lazily with the first model that uses it — and the third attempt was abandoned in favour of a structural fix rather than a fourth patch. Importing `editor/editor.api` plus `basic-languages/monaco.contribution` gives Monarch highlighting with no language services and no workers beyond the editor's own, which is all this ever needed: an item's body is a fragment, so type-checking a snippet that references an import it does not contain would underline half of it. It also cut the lazy chunk from 6.4 MB to 2.2 MB
+- Monaco is loaded from the bundled package via `loader.config({ monaco })` rather than `@monaco-editor/react`'s default jsDelivr CDN, so a body does not fail to render on an offline dev server or a restrictive CSP. The worker specifier is `monaco-editor/editor/editor.worker.js`, **not** the `esm/vs/...` path the file actually lives at: the package's `exports` map only publishes `"./*.js"` → `"./esm/vs/*.js"`, and the real path fails the build
+- **Display mode needed a text alternative Monaco cannot give.** It keeps only the *visible* lines in the DOM — 20 of 21 on the seeded Dockerfile snippet — so a screen reader cannot read past the viewport. The full body renders in an `sr-only` `pre`, the editor sits behind `aria-hidden`, and `tabIndex: -1` keeps its focusable edit context from being a trap inside the hidden subtree. Edit mode is the opposite: Monaco's own `native-edit-context` carries `role="textbox"` and the `ariaLabel`, so the wrapper deliberately adds no second name
+- `CopyButton` was lifted out of `ItemActionBar` into its own component. An open code item now has two of them — the action bar's and the editor header's — on the same payload, so sharing one implementation is what stops the confirmation timing or the clipboard failure behaviour drifting apart
+- The Monaco theme is hex, because `globals.css` is `oklch` and Monaco takes nothing else; the values are the sRGB equivalents of the `.dark` tokens (`#171717` is `--card`, `#ffffff1a` is `--border`), which is correct while `dark` is hard-coded on `<html>` and light mode does not exist
+- One self-correction worth not repeating: edit mode was first reported as read-only, from asserting on `textarea.ime-text-area` — Monaco's IME composition helper, which is *always* `readonly`, `tabindex="-1"` and `aria-hidden`. The real input is `div.native-edit-context`. The attribute looked authoritative and was measuring the wrong element
+- Verified in the browser against the live development branch: zero Monaco resources fetched on `/dashboard` until an item is opened, so the `next/dynamic` boundary holds; height fluid at 264px and capped at exactly 400px; `typescript`, `dockerfile` and `bash` all resolved in the header; the scrollbar slider at `rgba(255,255,255,0.1)`, the `--border` token; prompts keeping the plain `pre` and links untouched; the create dialog swapping control both ways as the type changes, and a typed language rehighlighting before the item exists. A keystroke flipping the copy button from disabled to enabled is what proved the `onChange` → state → `value` round trip, since that button's disabled state derives from the React value
+- Each assertion was captured **inside a single page evaluation**, which this feature needed for a second reason beyond sonner's toast lifetime: the Playwright MCP server writes its console and snapshot logs into the repository on every call, which trips Next's file watcher and Fast Refresh closes the drawer and dialog between tool round-trips. A stray `display-mode.png` screenshot written to the repo root was deleted before committing, for the same reason `scripts/__qlog.ts` once broke `npm run build` on `main`
+- A full create → open → edit → delete probe confirmed content and language persist and that a `command` gets the editor like a `snippet` does; the development branch was left exactly at its seeded baseline — 18 items, 40 item-tag links, 18 item-collection links, 18 tags, 5 collections, 7 item types, zero probe rows
+- 7 new tests (150 total): `code-item-types.test.ts` covering both code types, the two prose text types the name key exists to exclude, a custom type and the deliberate absence of normalizing; plus two on `getItem` pinning that the detail select carries `name` and passes it through — a silent regression otherwise, since dropping it fails no type check and only shows up as every snippet quietly falling back to a textarea
+- Feature complete — `npx tsc --noEmit`, `npm run lint`, `npm test` and `npm run build` all pass, with the route list unchanged. Committed as `feat: render snippets and commands in a monaco code editor` and merged into `main` with `--no-ff`, then the branch deleted
+- Known and deliberately left: the drawer shows the language **twice** for a code item — the sheet header's existing `Badge` and the new editor header — which was flagged rather than resolved, since removing the badge is a design call; and Monaco is a 2.2 MB lazy chunk, by far the largest thing the app ships, though it downloads only when a snippet or command is first opened
+- Still open, unchanged by this feature: Favorite and Pin are still disabled in the drawer's action bar, and collection membership is still display-only; `/collections` and `/collections/[id]` still 404; "New Collection" in the top bar is still display only; `/profile` still has no way to edit a name or avatar; expired verification and reset tokens are still never swept; a signed-in user visiting `/sign-in` still sees the form; rate limiting is inert on every deployed environment until the Upstash variables are added there; `EMAIL_FROM` still needs a domain verified in Resend; `vitest.config.ts`'s `server-only` stub still does not work; `checkPlanLimits` is still wired but switched off; and the Vercel Production/Preview environment variables have still never been checked
