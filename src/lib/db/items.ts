@@ -1,5 +1,10 @@
 import type { ItemContentKind } from "@/generated/prisma/client";
-import { ITEM_TYPE_SELECT, type ItemTypeSummary } from "@/lib/db/item-types";
+import {
+  ITEM_TYPE_DETAIL_SELECT,
+  ITEM_TYPE_SELECT,
+  type ItemTypeDetailSummary,
+  type ItemTypeSummary,
+} from "@/lib/db/item-types";
 import { prisma } from "@/lib/prisma";
 
 /** How many recent items the dashboard lists. */
@@ -71,6 +76,11 @@ interface ItemCollectionSummary {
  * out: nothing uploads yet, so selecting them would add a field no view reads.
  */
 export interface ItemDetail extends ItemSummary {
+  /**
+   * Narrower than the card's: the drawer renders the body, and choosing between
+   * the code editor and a textarea needs the type's `name`.
+   */
+  type: ItemTypeDetailSummary;
   /** Decides which of the columns below carries the item's payload. */
   contentType: ItemContentKind;
   /** Body of a `TEXT` item — snippet, prompt, command or note. */
@@ -129,7 +139,7 @@ export async function getItem(
       content: true,
       language: true,
       url: true,
-      itemType: { select: ITEM_TYPE_SELECT },
+      itemType: { select: ITEM_TYPE_DETAIL_SELECT },
       tags: { select: { tag: { select: { name: true } } } },
       collections: {
         select: { collection: { select: { id: true, name: true } } },

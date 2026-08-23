@@ -6,6 +6,7 @@ import { useId, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { createItem, type CreateItemState } from "@/actions/items";
+import { CodeEditor } from "@/components/dashboard/CodeEditor";
 import { TypeIcon } from "@/components/dashboard/TypeIcon";
 import { Button } from "@/components/ui/button";
 import {
@@ -27,6 +28,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { isCodeItemType } from "@/lib/code-item-types";
 import type { CreatableItemType } from "@/lib/db/item-types";
 import { parseTagInput, type ItemCreateField } from "@/lib/item-schemas";
 
@@ -66,6 +68,11 @@ export function NewItemDialog({ types }: NewItemDialogProps) {
   const [isPending, startTransition] = useTransition();
 
   const selectedType = types.find((type) => type.id === itemTypeId) ?? null;
+
+  // Which *control* renders the body, where `contentKind` below decides which
+  // fields exist at all. Both surfaces have to answer this the same way, or an
+  // item would be written in one editor and edited in another.
+  const isCode = selectedType !== null && isCodeItemType(selectedType.name);
 
   // A client-side guard only. The schema enforces both rules server-side, which
   // is the pair that counts — this just stops a submit that cannot succeed.
@@ -239,23 +246,38 @@ export function NewItemDialog({ types }: NewItemDialogProps) {
                 label="Content"
                 errors={errorsFor("content")}
               >
-                {(props) => (
-                  <Textarea
-                    {...props}
-                    value={content}
-                    onChange={(event) => setContent(event.target.value)}
-                    // Plain text, matching the drawer's edit form: a code
-                    // editor and syntax highlighting are a later feature.
-                    className="max-h-72 min-h-32 font-mono text-xs"
-                    spellCheck={false}
-                  />
-                )}
+                {(props) =>
+                  isCode ? (
+                    <CodeEditor
+                      {...props}
+                      value={content}
+                      onChange={setContent}
+                      // The live field, so typing a language rehighlights the
+                      // body before the item has been created.
+                      language={language}
+                      label="Content"
+                    />
+                  ) : (
+                    <Textarea
+                      {...props}
+                      value={content}
+                      onChange={(event) => setContent(event.target.value)}
+                      // Prose, matching the drawer's edit form.
+                      className="max-h-72 min-h-32 font-mono text-xs"
+                      spellCheck={false}
+                    />
+                  )
+                }
               </Field>
 
               <Field
                 id={`${fieldId}-language`}
                 label="Language"
-                hint="Used for syntax highlighting later, e.g. typescript"
+                hint={
+                  isCode
+                    ? "Sets syntax highlighting, e.g. typescript"
+                    : "Used for syntax highlighting later, e.g. typescript"
+                }
                 errors={errorsFor("language")}
               >
                 {(props) => (

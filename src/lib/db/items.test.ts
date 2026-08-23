@@ -36,6 +36,9 @@ const ITEM_ID = "item_1";
 
 const TYPE = {
   id: "type_snippet",
+  // `name` is only on the *detail* select, not the card's — the drawer needs it
+  // to choose between the code editor and a textarea.
+  name: "snippet",
   label: "Snippets",
   icon: "Code",
   color: "#3b82f6",
@@ -83,6 +86,30 @@ describe("getItem", () => {
     resolvesTo(null);
 
     await expect(getItem(USER_ID, ITEM_ID)).resolves.toBeNull();
+  });
+
+  /**
+   * The detail select is deliberately wider than the card's. Dropping `name`
+   * would not fail a type check at the call site — `ItemTypeDetailSummary`
+   * would simply arrive without it at runtime — and the only visible symptom
+   * would be every snippet quietly falling back to a plain textarea.
+   */
+  it("selects the type's name, which is what picks the code editor", async () => {
+    await getItem(USER_ID, ITEM_ID);
+
+    expect(prisma.item.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        select: expect.objectContaining({
+          itemType: { select: expect.objectContaining({ name: true }) },
+        }),
+      }),
+    );
+  });
+
+  it("passes the type's name through to the caller", async () => {
+    const item = await getItem(USER_ID, ITEM_ID);
+
+    expect(item?.type.name).toBe("snippet");
   });
 
   /**

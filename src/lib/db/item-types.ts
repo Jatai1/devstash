@@ -25,6 +25,27 @@ export const ITEM_TYPE_SELECT = {
   color: true,
 } as const;
 
+/**
+ * The type behind one item in the detail drawer.
+ *
+ * Adds `name` to what a card needs, because the drawer is where the body is
+ * rendered and `isCodeItemType` keys on the name. Deliberately a *second*
+ * select rather than a wider `ITEM_TYPE_SELECT`: only the detail path reads the
+ * name, and widening the shared one would add a column to every item list,
+ * every collection card and the sidebar — the same trade-off the item-create
+ * feature declined when it wanted `contentKind`.
+ */
+export interface ItemTypeDetailSummary extends ItemTypeSummary {
+  /** Stable identifier, e.g. "snippet" — see `isCodeItemType`. */
+  name: string;
+}
+
+/** The `select` that produces an `ItemTypeDetailSummary`. */
+export const ITEM_TYPE_DETAIL_SELECT = {
+  ...ITEM_TYPE_SELECT,
+  name: true,
+} as const;
+
 /** An item type as the sidebar's "Types" nav renders it. */
 export interface ItemTypeNavSummary extends ItemTypeSummary {
   /** Stable identifier, e.g. "snippet" — see `isProItemType`. */
