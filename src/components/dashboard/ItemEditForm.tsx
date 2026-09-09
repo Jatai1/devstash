@@ -6,6 +6,7 @@ import { toast } from "sonner";
 
 import { updateItem, type UpdateItemState } from "@/actions/items";
 import { CodeEditor } from "@/components/dashboard/CodeEditor";
+import { MarkdownEditor } from "@/components/dashboard/MarkdownEditor";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -13,6 +14,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { isCodeItemType } from "@/lib/code-item-types";
 import type { SerializedItemDetail } from "@/lib/db/items";
 import { parseTagInput, type ItemField } from "@/lib/item-schemas";
+import { isMarkdownItemType } from "@/lib/markdown-item-types";
 
 interface ItemEditFormProps {
   item: SerializedItemDetail;
@@ -52,6 +54,7 @@ export function ItemEditForm({ item, onCancel, onSaved }: ItemEditFormProps) {
   // Which *control* renders the body. Not the same question as which fields
   // exist, which `contentType` answers below — see `isCodeItemType`.
   const isCode = isCodeItemType(item.type.name);
+  const isMarkdown = isMarkdownItemType(item.type.name);
 
   // A client-side guard only. The schema enforces the same rule server-side,
   // which is the one that counts — this just stops a submit that cannot succeed.
@@ -173,6 +176,13 @@ export function ItemEditForm({ item, onCancel, onSaved }: ItemEditFormProps) {
                     // The live field, not the stored column: retyping the
                     // language rehighlights the body without a save.
                     language={language}
+                    label="Content"
+                  />
+                ) : isMarkdown ? (
+                  <MarkdownEditor
+                    {...props}
+                    value={content}
+                    onChange={setContent}
                     label="Content"
                   />
                 ) : (

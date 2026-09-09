@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { CodeEditor } from "@/components/dashboard/CodeEditor";
 import { ItemActionBar } from "@/components/dashboard/ItemActionBar";
 import { ItemEditForm } from "@/components/dashboard/ItemEditForm";
+import { MarkdownEditor } from "@/components/dashboard/MarkdownEditor";
 import { TypeIcon } from "@/components/dashboard/TypeIcon";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -18,6 +19,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { isCodeItemType } from "@/lib/code-item-types";
 import type { SerializedItemDetail } from "@/lib/db/items";
 import { formatLongDate } from "@/lib/format";
+import { isMarkdownItemType } from "@/lib/markdown-item-types";
 
 /** The outcome of one detail fetch. */
 type FetchResult =
@@ -322,30 +324,20 @@ function ViewBody({
  * so a custom type flows through unchanged — see `docs/item-types.md`.
  *
  * `TEXT` is the one case that then looks at the name as well, and only to pick
- * a control: a snippet or a command renders in the code editor, everything else
- * text stays preformatted prose. Which *columns* a type has is still the kind's
- * answer alone — see `isCodeItemType`.
+ * a control: a snippet or a command renders in the code editor, a note or a
+ * prompt in the Markdown editor, and anything else text stays preformatted
+ * prose. Which *columns* a type has is still the kind's answer alone — see
+ * `isCodeItemType` and `isMarkdownItemType`.
  */
 function ItemPayload({ item }: { item: SerializedItemDetail }) {
   switch (item.contentType) {
     case "TEXT":
       return (
-        item.content &&
-        (isCodeItemType(item.type.name) ? (
+        item.content && (
           <Section label="Content">
-            <CodeEditor
-              value={item.content}
-              language={item.language}
-              label={`${item.title} contents`}
-            />
+            <TextBody item={item} content={item.content} />
           </Section>
-        ) : (
-          <Section label="Content">
-            <pre className="overflow-x-auto rounded-lg border bg-muted/50 p-4 font-mono text-xs leading-relaxed">
-              <code>{item.content}</code>
-            </pre>
-          </Section>
-        ))
+        )
       );
 
     case "URL":
@@ -375,6 +367,44 @@ function ItemPayload({ item }: { item: SerializedItemDetail }) {
         </Section>
       );
   }
+}
+
+/**
+ * Which control renders a `TEXT` body, read-only.
+ *
+ * `content` is passed separately from `item` because the caller has already
+ * narrowed it to a non-empty string; taking it as a prop keeps that narrowing
+ * instead of re-checking a nullable column three times.
+ *
+ * The fallback is the plain `<pre>` that predates both editors, and it is what a
+ * user's own custom text type still gets.
+ */
+function TextBody({
+  item,
+  content,
+}: {
+  item: SerializedItemDetail;
+  content: string;
+}) {
+  if (isCodeItemType(item.type.name)) {
+    return (
+      <CodeEditor
+        value={content}
+        language={item.language}
+        label={`${item.title} contents`}
+      />
+    );
+  }
+
+  if (isMarkdownItemType(item.type.name)) {
+    return <MarkdownEditor value={content} label={`${item.title} contents`} />;
+  }
+
+  return (
+    <pre className="overflow-x-auto rounded-lg border bg-muted/50 p-4 font-mono text-xs leading-relaxed">
+      <code>{content}</code>
+    </pre>
+  );
 }
 
 interface SectionProps {

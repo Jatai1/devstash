@@ -1,16 +1,80 @@
-# Current Feature
+# Current Feature: Markdown Editor
 
 ## Status
 
-Complete
+In Progress
 
 ## Goals
 
-<!-- Bullet points of what success looks like -->
+- A `MarkdownEditor` component with a Write/Preview tabbed interface, built on
+  `react-markdown` + `remark-gfm` for GitHub Flavored Markdown.
+- Notes and prompts render and edit in it; snippets and commands keep the
+  `CodeEditor` untouched, and every other type keeps what it has.
+- One component serves both modes: display mode shows Preview only, edit mode
+  opens on Write with Preview available.
+- A copy button in the header, in the same style and from the same `CopyButton`
+  the `CodeEditor` header uses.
+- Preview styling that reads as rendered prose in the dark theme — distinct
+  h1–h6, fenced code blocks, inline code, indented lists, quoted blockquotes,
+  blue links with a hover state, and bordered tables with a header background —
+  driven by a `.markdown-preview` class rather than per-element utilities.
+- Fluid height capped at 400px with a themed scrollbar, matching the
+  `CodeEditor`'s behaviour.
+- Wired into all three surfaces: `NewItemDialog`, `ItemEditForm`, and
+  `ItemDrawer`'s read-only payload.
 
 ## Notes
 
-<!-- Additional context, constraints, or details from the spec -->
+**This is the code editor's sibling and the plumbing is already in place.** The
+feature is entirely presentational — no migration, no schema change, no Server
+Action and no query change. The obstacle the code editor had to solve is already
+solved: `ITEM_TYPE_DETAIL_SELECT` carries `name`, so all three surfaces can
+already branch on the type. Each of them holds a symmetrical
+`isCode ? <CodeEditor/> : <Textarea/>` ternary — `ItemDrawer.tsx:334`,
+`ItemEditForm.tsx:168`, `NewItemDialog.tsx:249` — and this feature turns the
+`else` arm into a third branch. The drawer's read-only arm is a `<pre>` rather
+than a `Textarea`.
+
+**The spec contradicts itself on styling and the resolution matters.** It asks
+to "match existing dark theme styling" and then names `bg-[#1e1e1e]` for the
+container and `bg-[#2d2d2d]` for the header, but the `CodeEditor` it is matching
+uses semantic tokens — `bg-card` and `bg-muted/40` — and `--card` is `#171717`,
+not `#1e1e1e`. Taking the hex literally would make the markdown editor visibly
+*not* match the code editor sitting beside it in the same drawer, and would be
+the first hard-coded surface colour in the app. The tokens are almost certainly
+what the requirement means; confirm at `start`.
+
+**Which types get it is the one real design decision.** The four `TEXT` types
+are `snippet`, `prompt`, `command` and `note`, so "notes and prompts" is exactly
+the complement of `isCodeItemType`. Writing it as that complement would silently
+hand the markdown editor to any custom `TEXT` type; a name-keyed
+`isMarkdownItemType`, in the shape of `src/lib/code-item-types.ts` and
+`src/lib/pro.ts`, answers `false` for a custom type and leaves it on the plain
+textarea — consistent with how the code editor already treats one, and with the
+spec's "notes and prompts **only**".
+
+**Dependencies are lighter than the last feature's.** `react-markdown` and
+`remark-gfm` are both new and both client-side, but nothing here is Monaco: no
+`next/dynamic` boundary, no worker, no multi-megabyte chunk. The Write/Preview
+tabs need the shadcn `tabs` component, which adds **no** new package —
+`radix-ui@1.6.7` is already a dependency and every `src/components/ui/*` file
+imports from it. Diff `package.json` before and after the install anyway; the
+`sonner` install once pulled in `next-themes` unannounced.
+
+**`.markdown-preview` is the first bespoke class `globals.css` will hold** — the
+file currently has only `@theme inline`, `.dark` and `@layer base`. Editing the
+shared stylesheet is in scope here because the spec names the class, but nothing
+else in that file should move. `@tailwindcss/typography` is not installed and
+the spec explicitly prefers a custom class, so do not reach for the plugin.
+
+Three smaller things settled at load. Rendered markdown is untrusted user input,
+and `react-markdown` does not render raw HTML unless `rehype-raw` is added — the
+safe default, and it should stay that way. Display mode needs no `sr-only`
+shadow copy the way the code editor did: Monaco keeps only visible lines in the
+DOM, `react-markdown` emits real elements. And an open note will now have two
+copy affordances on the same body — the action bar's and the new header's —
+which is the same trade the code editor already made, so reuse `CopyButton`
+rather than reimplementing it.
 
 ## History
 
@@ -438,3 +502,4 @@ Complete
 - Feature complete — `npx tsc --noEmit`, `npm run lint`, `npm test` and `npm run build` all pass, with the route list unchanged. Committed as `feat: render snippets and commands in a monaco code editor` and merged into `main` with `--no-ff`, then the branch deleted
 - Known and deliberately left: the drawer shows the language **twice** for a code item — the sheet header's existing `Badge` and the new editor header — which was flagged rather than resolved, since removing the badge is a design call; and Monaco is a 2.2 MB lazy chunk, by far the largest thing the app ships, though it downloads only when a snippet or command is first opened
 - Still open, unchanged by this feature: Favorite and Pin are still disabled in the drawer's action bar, and collection membership is still display-only; `/collections` and `/collections/[id]` still 404; "New Collection" in the top bar is still display only; `/profile` still has no way to edit a name or avatar; expired verification and reset tokens are still never swept; a signed-in user visiting `/sign-in` still sees the form; rate limiting is inert on every deployed environment until the Upstash variables are added there; `EMAIL_FROM` still needs a domain verified in Resend; `vitest.config.ts`'s `server-only` stub still does not work; `checkPlanLimits` is still wired but switched off; and the Vercel Production/Preview environment variables have still never been checked
+- Loaded `context/features/markdown-editor-spec.md` and set the current feature to the Markdown editor — a `MarkdownEditor` with Write/Preview tabs, a header copy button, readonly and edit modes, `.markdown-preview` styling for the dark theme, and a fluid height capped at 400px. The spec is new and untracked, unlike the code editor's, which was committed with its implementation. Loading it surfaced that this is the code editor's sibling and that the code editor already paid its setup cost: the feature is **entirely presentational** — no migration, no schema change, no Server Action or query change — and the obstacle that shaped the last load is gone, because `ITEM_TYPE_DETAIL_SELECT` already carries `name`. All three surfaces already hold a symmetrical `isCode ? <CodeEditor/> : <Textarea/>` ternary (`ItemDrawer.tsx:334`, `ItemEditForm.tsx:168`, `NewItemDialog.tsx:249`, the drawer's arm being a `<pre>` rather than a `Textarea`), so the work is turning an existing `else` into a third branch rather than teaching three components to branch at all. The spec **contradicts itself on styling**: it says to match the existing dark theme and then names `bg-[#1e1e1e]` / `bg-[#2d2d2d]`, while the `CodeEditor` it is matching uses `bg-card` (which is `#171717`) and `bg-muted/40` — taking the hex literally would make the two editors visibly disagree inside the same drawer and would introduce the app's first hard-coded surface colour. The one real design decision is which types qualify: the four `TEXT` types are `snippet`, `prompt`, `command` and `note`, so "notes and prompts" is exactly the complement of `isCodeItemType`, and writing it as a complement would silently hand the editor to a custom `TEXT` type where a name-keyed `isMarkdownItemType` — in the shape of `code-item-types.ts` and `pro.ts` — answers `false` and leaves it on the textarea. Also settled at load: `react-markdown` and `remark-gfm` are new but nothing like Monaco (no dynamic boundary, no worker, no multi-megabyte chunk), while the Write/Preview tabs need the shadcn `tabs` component and **no** new package, since `radix-ui@1.6.7` is already a dependency every `ui/*` file imports from; `.markdown-preview` will be the first bespoke class in `globals.css`, which today holds only `@theme inline`, `.dark` and `@layer base`, and `@tailwindcss/typography` is deliberately not the answer; rendered markdown is untrusted input and `react-markdown`'s default of not rendering raw HTML should stay; display mode needs no `sr-only` shadow copy, because unlike Monaco it emits real DOM; and an open note will end up with two copy affordances on one body, the same trade the code editor already made, so `CopyButton` gets reused. Three decisions left for `start`: name list or complement, the spec's hex or the semantic tokens, and whether readonly renders a one-tab bar or no tab bar at all
