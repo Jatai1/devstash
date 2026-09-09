@@ -7,6 +7,7 @@ import { toast } from "sonner";
 
 import { createItem, type CreateItemState } from "@/actions/items";
 import { CodeEditor } from "@/components/dashboard/CodeEditor";
+import { MarkdownEditor } from "@/components/dashboard/MarkdownEditor";
 import { TypeIcon } from "@/components/dashboard/TypeIcon";
 import { Button } from "@/components/ui/button";
 import {
@@ -31,6 +32,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { isCodeItemType } from "@/lib/code-item-types";
 import type { CreatableItemType } from "@/lib/db/item-types";
 import { parseTagInput, type ItemCreateField } from "@/lib/item-schemas";
+import { isMarkdownItemType } from "@/lib/markdown-item-types";
 
 interface NewItemDialogProps {
   /** Every type this user may file under — see `getCreatableItemTypes`. */
@@ -73,6 +75,8 @@ export function NewItemDialog({ types }: NewItemDialogProps) {
   // fields exist at all. Both surfaces have to answer this the same way, or an
   // item would be written in one editor and edited in another.
   const isCode = selectedType !== null && isCodeItemType(selectedType.name);
+  const isMarkdown =
+    selectedType !== null && isMarkdownItemType(selectedType.name);
 
   // A client-side guard only. The schema enforces both rules server-side, which
   // is the pair that counts — this just stops a submit that cannot succeed.
@@ -255,6 +259,13 @@ export function NewItemDialog({ types }: NewItemDialogProps) {
                       // The live field, so typing a language rehighlights the
                       // body before the item has been created.
                       language={language}
+                      label="Content"
+                    />
+                  ) : isMarkdown ? (
+                    <MarkdownEditor
+                      {...props}
+                      value={content}
+                      onChange={setContent}
                       label="Content"
                     />
                   ) : (
