@@ -8,6 +8,44 @@ and bookmarks in one place.
 > search, favorites/pins, file uploads, billing and AI features are not built yet. See
 > [What works today](#what-works-today) for the exact line.
 
+## Demo
+
+![Dashboard](docs/screenshots/dashboard.png)
+
+These are screenshots of the running app, signed in as the seeded demo account. The data
+comes from `prisma/seed.ts`.
+
+| | |
+|---|---|
+| ![Snippets list](docs/screenshots/items-snippets.png) | ![Snippet open in the drawer](docs/screenshots/item-drawer-code.png) |
+| **Items by type.** Every type has its own page (`/items/snippets`) | **Snippets and commands** open in a Monaco code editor |
+| ![Prompt open in the drawer](docs/screenshots/item-drawer-markdown.png) | ![New item dialog](docs/screenshots/new-item.png) |
+| **Notes and prompts** render as Markdown | **New Item.** The fields change with the chosen type |
+| ![Profile](docs/screenshots/profile.png) | ![Sign in](docs/screenshots/sign-in.png) |
+| **Profile** with usage stats and account actions | **Sign in** with email/password or GitHub |
+
+### Try it yourself
+
+After [Getting started](#getting-started), sign in at `http://localhost:3000/sign-in` with
+`demo@devstash.io` / `12345678` and try this:
+
+1. **Dashboard.** Look at the counters, the seeded collections, and the pinned and recent
+   items.
+2. **Browse by type.** Click **Snippets** in the sidebar, then open `useDebounce` to see
+   it highlighted in the code editor, with its tags and collection.
+3. **Markdown.** Go to **Prompts** and open `Code review prompt` to see the rendered
+   Markdown.
+4. **Copy.** Use **Copy** in the drawer to put the content on your clipboard.
+5. **Create.** Click **New Item**, choose *Snippets*, give it a title, some code and a
+   language, then save. It shows up in the list and the sidebar count goes up.
+6. **Edit and delete.** Open your new item, click **Edit** to change it, then delete it
+   with the trash icon.
+7. **Profile.** Open the user menu at the bottom of the sidebar, then **Profile**, to see
+   per-type stats and the change-password / delete-account pages.
+
+**Not built yet:** search, Favorite/Pin, New Collection and the collection pages. They're
+visible in the UI but don't work. See [Not built yet](#not-built-yet).
+
 ## Tech stack
 
 | Area | Choice |
