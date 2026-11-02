@@ -50,5 +50,7 @@ next-env.d.ts
 # MCP server config — holds a live context7 Authorization token
 .mcp.json
 
-# per-machine Claude Code permissions, not shared
-.claude/settings.local.json
+# Claude Code — project instructions, agents, skills and local settings
+.claude/
+CLAUDE.md
+CLAUDE.local.md
