@@ -54,3 +54,5 @@ next-env.d.ts
 .claude/
 CLAUDE.md
 CLAUDE.local.md
+context/ai-interaction.md
+context/current-feature.md
